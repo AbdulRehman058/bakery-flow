@@ -879,129 +879,233 @@ export default function App() {
   /* ── ADMIN ── */
   if (screen === "admin" && userRole === "admin") {
     const deliveredCount = orders.filter(o => o.status === "delivered").length;
-    const rev = orders.filter(o => o.status === "delivered").length * 520; // Dummy rev calc
     const activeBakeries = new Set(orders.map(o => o.bakery)).size;
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const todaysOrders = orders.filter(o => o.timestamp >= todayStart.getTime());
+    const totalItems = orders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.qty, 0), 0);
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+    const [adminTab, setAdminTab] = useState("overview");
+
+    // Bakery performance data
+    const bakeryPerf = [...new Set(orders.map(o => o.bakery))].map(b => {
+      const bOrders = orders.filter(o => o.bakery === b);
+      return {
+        name: b,
+        total: bOrders.length,
+        pending: bOrders.filter(o => o.status === "pending").length,
+        delivered: bOrders.filter(o => o.status === "delivered").length,
+        items: bOrders.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.qty, 0), 0),
+      };
+    }).sort((a, b) => b.total - a.total);
 
     return (
       <>
         <style>{CSS}</style>
         <div className="app">
-          <div className="hdr app-hdr">
+          <div className="hdr app-hdr" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 50%, #334155 100%)" }}>
             <div className="hdr-row">
               <div>
-                <h1>👑 BakeryFlow Admin</h1>
-                <div className="hdr-sub">Owner Dashboard</div>
+                <h1 style={{ fontSize: 18 }}>👑 BakeryFlow</h1>
+                <div className="hdr-sub">ADMIN CONTROL CENTER</div>
               </div>
-              <button className="hdr-btn" onClick={logout}>🚪 Logout</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="hdr-btn" onClick={() => navigate("factory")}>🏭</button>
+                <button className="hdr-btn" onClick={() => navigate("driver")}>🚚</button>
+                <button className="hdr-btn" onClick={logout}>🚪</button>
+              </div>
             </div>
           </div>
-          <div className="layout-grid">
-            <div className="layout-main" style={{ marginTop: 2 }}>
-              
-              {/* GOD MODE NAVIGATION */}
-              <div className="o-card" style={{ padding: "20px", marginBottom: "16px", background: "linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%)", color: "white", border: "1px solid #444" }}>
-                <h3 style={{ fontSize: 16, marginBottom: 16, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-                  ⚡️ Quick Access (God Mode)
-                </h3>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                  <button className="btn" style={{ flex: "1 1 120px", background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }} onClick={() => navigate("factory")}>🏭 Factory View</button>
-                  <button className="btn" style={{ flex: "1 1 120px", background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }} onClick={() => navigate("driver")}>🚚 Driver View</button>
-                  <div style={{ display: "flex", flex: "2 1 200px", gap: 8 }}>
-                     <select className="login-input" style={{ flex: 1, background: "rgba(0,0,0,0.4)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", padding: "10px" }}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            setBakeryName(e.target.value);
-                            navigate("bakery-orders");
-                          }
-                        }}
-                     >
-                       <option value="">View as Bakery...</option>
-                       {bakeries.map(b => <option key={b} value={b}>{b}</option>)}
-                     </select>
+
+          <div style={{ padding: "16px 16px 0" }}>
+            {/* Welcome Banner */}
+            <div style={{ background: "linear-gradient(135deg, #1E1208 0%, #3D2B1A 50%, #5C3D1E 100%)", borderRadius: 16, padding: "24px 24px 20px", color: "#fff", marginBottom: 16, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", right: 16, top: 12, fontSize: 48, opacity: 0.15 }}>👑</div>
+              <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 4 }}>{greeting} 👋</div>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'Playfair Display', serif", marginBottom: 8 }}>
+                {session?.user?.user_metadata?.name || "Admin"}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.6 }}>
+                📊 {todaysOrders.length} orders today · {orders.filter(o => o.status === "pending").length} awaiting action
+              </div>
+            </div>
+
+            {/* Quick Access */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 16 }}>
+              <button className="o-card" style={{ padding: "14px 12px", border: "1px solid var(--border)", cursor: "pointer", textAlign: "center", background: "var(--card)", transition: "all .15s" }}
+                onClick={() => navigate("factory")}
+                onMouseOver={e => e.currentTarget.style.borderColor = "var(--accent)"}
+                onMouseOut={e => e.currentTarget.style.borderColor = "var(--border)"}>
+                <div style={{ fontSize: 24, marginBottom: 4 }}>🏭</div>
+                <div style={{ fontSize: 11, fontWeight: 600 }}>Factory</div>
+              </button>
+              <button className="o-card" style={{ padding: "14px 12px", border: "1px solid var(--border)", cursor: "pointer", textAlign: "center", background: "var(--card)", transition: "all .15s" }}
+                onClick={() => navigate("driver")}
+                onMouseOver={e => e.currentTarget.style.borderColor = "#8B5CF6"}
+                onMouseOut={e => e.currentTarget.style.borderColor = "var(--border)"}>
+                <div style={{ fontSize: 24, marginBottom: 4 }}>🚚</div>
+                <div style={{ fontSize: 11, fontWeight: 600 }}>Driver</div>
+              </button>
+              {bakeries.slice(0, 4).map(b => (
+                <button key={b} className="o-card" style={{ padding: "14px 12px", border: "1px solid var(--border)", cursor: "pointer", textAlign: "center", background: "var(--card)", transition: "all .15s" }}
+                  onClick={() => { setBakeryName(b); navigate("bakery-orders"); }}
+                  onMouseOver={e => e.currentTarget.style.borderColor = "#10B981"}
+                  onMouseOut={e => e.currentTarget.style.borderColor = "var(--border)"}>
+                  <div style={{ fontSize: 24, marginBottom: 4 }}>🏪</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</div>
+                </button>
+              ))}
+            </div>
+
+            {/* KPI Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 16 }}>
+              {[
+                { label: "Total Orders", value: orders.length, icon: "📦", color: "var(--accent)", bg: "linear-gradient(135deg, #FEF3C7, #FDE68A)" },
+                { label: "Today", value: todaysOrders.length, icon: "📅", color: "#059669", bg: "linear-gradient(135deg, #D1FAE5, #A7F3D0)" },
+                { label: "Pending", value: orders.filter(o => o.status === "pending").length, icon: "⏳", color: "#D97706", bg: "linear-gradient(135deg, #FEF3C7, #FDE68A)" },
+                { label: "Delivered", value: deliveredCount, icon: "✅", color: "#059669", bg: "linear-gradient(135deg, #D1FAE5, #A7F3D0)" },
+                { label: "Total Items", value: Math.round(totalItems), icon: "🛒", color: "#7C3AED", bg: "linear-gradient(135deg, #EDE9FE, #DDD6FE)" },
+                { label: "Bakeries", value: activeBakeries, icon: "🏪", color: "#2563EB", bg: "linear-gradient(135deg, #DBEAFE, #BFDBFE)" },
+              ].map((kpi, i) => (
+                <div key={i} className="o-card" style={{ padding: "14px 16px", background: kpi.bg, border: "none", position: "relative", overflow: "hidden" }}>
+                  <div style={{ position: "absolute", right: 8, top: 8, fontSize: 28, opacity: 0.3 }}>{kpi.icon}</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: kpi.color }}>{kpi.value}</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: kpi.color, opacity: 0.8, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 }}>{kpi.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tab Navigation */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, background: "var(--card)", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden" }}>
+              {[
+                { id: "overview", label: "📊 Overview" },
+                { id: "orders", label: "📋 Recent Orders" },
+                { id: "bakeries", label: "🏪 Bakeries" },
+              ].map(tab => (
+                <button key={tab.id} onClick={() => setAdminTab(tab.id)}
+                  style={{ flex: 1, padding: "10px 8px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: adminTab === tab.id ? "var(--accent)" : "transparent",
+                    color: adminTab === tab.id ? "#fff" : "var(--text3)",
+                    transition: "all .15s" }}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab Content */}
+            {adminTab === "overview" && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginBottom: 16 }}>
+                  <div className="o-card" style={{ padding: 20 }}>
+                    <h3 style={{ fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>📊 Status Distribution</h3>
+                    <div style={{ height: 220 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={STATUS_FLOW.map(s => ({ name: STATUS_CFG[s].label, value: orders.filter(o => o.status === s).length })).filter(d => d.value > 0)}
+                            cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={4} dataKey="value"
+                            label={({ name, value, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            labelLine={{ stroke: "var(--text3)", strokeWidth: 1 }}
+                          >
+                            {STATUS_FLOW.map(s => <Cell key={s} fill={STATUS_CFG[s].color} />)}
+                          </Pie>
+                          <Tooltip contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", fontSize: 12 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="o-card" style={{ padding: 20 }}>
+                    <h3 style={{ fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>🏆 Top Products Today</h3>
+                    {getDailySummary().length === 0 ? (
+                      <div className="empty" style={{ padding: 30 }}><div className="ic">📭</div><p>No orders today yet</p></div>
+                    ) : (
+                      <div style={{ height: 220 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={getDailySummary().slice(0, 8)} margin={{ top: 0, right: 0, left: -10, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                            <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-35} textAnchor="end" height={55} />
+                            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <Tooltip cursor={{ fill: "rgba(0,0,0,0.04)" }} contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", fontSize: 12 }} />
+                            <Bar dataKey="qty" fill="var(--accent)" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, padding: "0 0 20px" }}>
-                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid var(--accent)" }}>
-                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>TOTAL ORDERS</div>
-                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6 }}>{orders.length}</div>
-                </div>
-                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #F59E0B" }}>
-                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>PENDING</div>
-                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#F59E0B" }}>{orders.filter(o => o.status === "pending").length}</div>
-                </div>
-                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #3B82F6" }}>
-                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>PACKED</div>
-                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#3B82F6" }}>{orders.filter(o => o.status === "packed").length}</div>
-                </div>
-                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #8B5CF6" }}>
-                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>DISPATCHING</div>
-                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#8B5CF6" }}>{orders.filter(o => o.status === "dispatching").length}</div>
-                </div>
-                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #10B981" }}>
-                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>DELIVERED</div>
-                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#10B981" }}>{deliveredCount}</div>
-                </div>
-                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid var(--text)" }}>
-                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>BAKERIES</div>
-                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6 }}>{activeBakeries}</div>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, padding: "0 0 20px" }}>
-                {/* Status Distribution Pie */}
-                <div className="o-card" style={{ padding: 20 }}>
-                  <h3 style={{ fontSize: 14, marginBottom: 16 }}>📊 Order Status Distribution</h3>
+                <div className="o-card" style={{ padding: 20, marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 13, marginBottom: 16 }}>📈 Orders by Bakery</h3>
                   <div style={{ height: 220 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={STATUS_FLOW.map(s => ({ name: STATUS_CFG[s].label, value: orders.filter(o => o.status === s).length })).filter(d => d.value > 0)}
-                          cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value"
-                          label={({ name, value }) => `${name}: ${value}`}
-                        >
-                          {STATUS_FLOW.map((s, i) => <Cell key={s} fill={STATUS_CFG[s].color} />)}
-                        </Pie>
-                        <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Bakery-wise Orders */}
-                <div className="o-card" style={{ padding: 20 }}>
-                  <h3 style={{ fontSize: 14, marginBottom: 16 }}>🏪 Orders by Bakery</h3>
-                  <div style={{ height: 220 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[...new Set(orders.map(o => o.bakery))].map(b => ({ name: b, orders: orders.filter(o => o.bakery === b).length })).sort((a,b) => b.orders - a.orders).slice(0, 8)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
-                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                        <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }} />
-                        <Bar dataKey="orders" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                      <BarChart data={bakeryPerf.slice(0, 8)} margin={{ top: 0, right: 0, left: -10, bottom: 0 }} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border)" />
+                        <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} />
+                        <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} axisLine={false} tickLine={false} />
+                        <Tooltip contentStyle={{ borderRadius: 10, border: "none", boxShadow: "0 8px 24px rgba(0,0,0,0.12)", fontSize: 12 }} />
+                        <Bar dataKey="total" fill="#8B5CF6" radius={[0, 6, 6, 0]} name="Orders" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
-              </div>
+              </>
+            )}
 
-              <div style={{ padding: "0 0 20px" }}>
-                <div className="o-card" style={{ padding: 20 }}>
-                  <h3 style={{ fontSize: 14, marginBottom: 16 }}>🏆 Top Products Today</h3>
-                  <div style={{ height: 250 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={getDailySummary().slice(0, 10)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-45} textAnchor="end" height={60} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip cursor={{ fill: '#f5f5f5' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                        <Bar dataKey="qty" fill="var(--accent)" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+            {adminTab === "orders" && (
+              <div style={{ marginBottom: 20 }}>
+                {orders.slice(0, 20).map(order => {
+                  const sc = STATUS_CFG[order.status];
+                  return (
+                    <div key={order.id} className="o-card" style={{ marginBottom: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                          <span style={{ fontWeight: 700, fontSize: 13 }}>#{order.id.slice(-6).toUpperCase()}</span>
+                          <span className="s-badge" style={{ background: sc.bg, color: sc.color }}>{sc.icon} {sc.label}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{order.bakery} · {order.items.length} items · {fmtDate(order.timestamp)}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button className="btn-o" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setPrintOrder(order)}>🖨️</button>
+                        <button className="btn-o" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => shareWhatsApp(order)}>💬</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {orders.length === 0 && <div className="empty"><div className="ic">📭</div><p>No orders yet</p></div>}
               </div>
-            </div>
+            )}
+
+            {adminTab === "bakeries" && (
+              <div style={{ marginBottom: 20 }}>
+                {bakeryPerf.length === 0 ? (
+                  <div className="empty"><div className="ic">🏪</div><p>No bakery data yet</p></div>
+                ) : (
+                  bakeryPerf.map((bp, i) => (
+                    <div key={bp.name} className="o-card" style={{ marginBottom: 8, padding: "14px 16px", cursor: "pointer" }}
+                      onClick={() => { setBakeryName(bp.name); navigate("bakery-orders"); }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, var(--accent), var(--accent2))", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14 }}>
+                          {i + 1}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14 }}>{bp.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--text3)" }}>{bp.total} orders · {bp.items} items total</div>
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>→</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {bp.pending > 0 && <span className="s-badge" style={{ background: "#FEF3C7", color: "#D97706" }}>⏳ {bp.pending}</span>}
+                        {bp.delivered > 0 && <span className="s-badge" style={{ background: "#D1FAE5", color: "#059669" }}>✅ {bp.delivered}</span>}
+                        <span className="s-badge" style={{ background: "var(--bg2)", color: "var(--text2)" }}>📦 {bp.total}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
+          {toast && <div className="toast">✅ {toast}</div>}
         </div>
       </>
     );
