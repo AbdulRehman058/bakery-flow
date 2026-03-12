@@ -700,33 +700,25 @@ export default function App() {
   }
 
   async function addProduct(catId, prod) {
-    const { error } = await supabase.from('products').insert([{
-      category_id: catId,
-      name: prod.name,
-      unit: prod.unit,
-      step: prod.step,
-      image_url: prod.image || null
-    }]);
-
-    if (!error) {
-      await supabase.from('logs').insert([{ action: 'PRODUCT_ADDED', details: `Added ${prod.name} to ${catId}` }]);
-      // Optimistic upate is handled by realtime subscription mostly, but we can do it here too:
-      // setProducts({ ...products, [catId]: [...(products[catId] || []), prod] });
-    } else {
-      console.error("Add Product Error:", error);
-      showToast("Failed to add product");
-    }
-  }
-
-  async function addProduct(catId, prod) {
     const newP = { ...prod, is_available: true };
     setProducts(prev => ({
       ...prev, [catId]: [...(prev[catId] || []), newP]
     }));
 
-    await supabase.from('products').insert([{
+    const { error } = await supabase.from('products').insert([{
       name: prod.name, category_id: catId, unit: prod.unit, step: prod.step, image_url: prod.image || null, is_available: true
     }]);
+
+    if (error) {
+      console.error("Add Product Error:", error);
+      showToast("Failed to add product");
+      // Rollback optimistic update
+      setProducts(prev => ({
+        ...prev, [catId]: (prev[catId] || []).filter(p => p.id !== newP.id)
+      }));
+    } else {
+      await supabase.from('logs').insert([{ action: 'PRODUCT_ADDED', details: `Added ${prod.name} to ${catId}` }]);
+    }
   }
 
   async function updateProductDetails(catId, pid, updatedProd) {
@@ -748,6 +740,10 @@ export default function App() {
   }
 
   async function removeProduct(catId, pid) {
+    // Optimistic local state update
+    setProducts(prev => ({
+      ...prev, [catId]: (prev[catId] || []).filter(p => p.id !== pid)
+    }));
     const { error } = await supabase.from('products').delete().eq('id', pid);
     if (!error) {
       await supabase.from('logs').insert([{ action: 'PRODUCT_REMOVED', details: `Removed product ID ${pid}` }]);
@@ -903,31 +899,79 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, padding: "0 0 20px" }}>
-                <div className="o-card" style={{ padding: 20, textAlign: "center", borderTop: "4px solid var(--accent)" }}>
-                   <div style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>TOTAL ORDERS</div>
-                   <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>{orders.length}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, padding: "0 0 20px" }}>
+                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid var(--accent)" }}>
+                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>TOTAL ORDERS</div>
+                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6 }}>{orders.length}</div>
                 </div>
-                <div className="o-card" style={{ padding: 20, textAlign: "center", borderTop: "4px solid #10B981" }}>
-                   <div style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>DELIVERED</div>
-                   <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>{deliveredCount}</div>
+                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #F59E0B" }}>
+                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>PENDING</div>
+                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#F59E0B" }}>{orders.filter(o => o.status === "pending").length}</div>
                 </div>
-                <div className="o-card" style={{ padding: 20, textAlign: "center", borderTop: "4px solid #8B5CF6" }}>
-                   <div style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>ACTIVE BAKERIES</div>
-                   <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>{activeBakeries}</div>
+                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #3B82F6" }}>
+                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>PACKED</div>
+                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#3B82F6" }}>{orders.filter(o => o.status === "packed").length}</div>
+                </div>
+                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #8B5CF6" }}>
+                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>DISPATCHING</div>
+                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#8B5CF6" }}>{orders.filter(o => o.status === "dispatching").length}</div>
+                </div>
+                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid #10B981" }}>
+                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>DELIVERED</div>
+                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6, color: "#10B981" }}>{deliveredCount}</div>
+                </div>
+                <div className="o-card" style={{ padding: 16, textAlign: "center", borderTop: "4px solid var(--text)" }}>
+                   <div style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>BAKERIES</div>
+                   <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6 }}>{activeBakeries}</div>
                 </div>
               </div>
 
-              <div style={{ padding: "0 16px 20px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, padding: "0 0 20px" }}>
+                {/* Status Distribution Pie */}
                 <div className="o-card" style={{ padding: 20 }}>
-                  <h3 style={{ fontSize: 15, marginBottom: 20 }}>Top Products Overall</h3>
+                  <h3 style={{ fontSize: 14, marginBottom: 16 }}>📊 Order Status Distribution</h3>
+                  <div style={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={STATUS_FLOW.map(s => ({ name: STATUS_CFG[s].label, value: orders.filter(o => o.status === s).length })).filter(d => d.value > 0)}
+                          cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value"
+                          label={({ name, value }) => `${name}: ${value}`}
+                        >
+                          {STATUS_FLOW.map((s, i) => <Cell key={s} fill={STATUS_CFG[s].color} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Bakery-wise Orders */}
+                <div className="o-card" style={{ padding: 20 }}>
+                  <h3 style={{ fontSize: 14, marginBottom: 16 }}>🏪 Orders by Bakery</h3>
+                  <div style={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[...new Set(orders.map(o => o.bakery))].map(b => ({ name: b, orders: orders.filter(o => o.bakery === b).length })).sort((a,b) => b.orders - a.orders).slice(0, 8)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
+                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: 12 }} />
+                        <Bar dataKey="orders" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ padding: "0 0 20px" }}>
+                <div className="o-card" style={{ padding: 20 }}>
+                  <h3 style={{ fontSize: 14, marginBottom: 16 }}>🏆 Top Products Today</h3>
                   <div style={{ height: 250 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={getDailySummary().slice(0, 10)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                         <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-45} textAnchor="end" height={60} />
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip cursor={{ fill: '#f5f5f5' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                        <Bar dataKey="qty" fill="var(--text)" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="qty" fill="var(--accent)" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -994,7 +1038,7 @@ export default function App() {
                       <button className="m-close" onClick={() => setShowQuickAdd(false)}>✕</button>
                     </div>
                     <div className="m-body">
-                      <QuickAddForm catId={activeCat} onAdd={(prod) => { addProduct(activeCat, prod); setShowQuickAdd(false); showToast(`${prod.name} added!`); }} />
+                      <ProductForm onSubmit={(prod) => { addProduct(activeCat, prod); setShowQuickAdd(false); showToast(`${prod.name} added!`); }} submitLabel="+ Add" />
                     </div>
                   </div>
                 </div>
@@ -1136,6 +1180,20 @@ export default function App() {
             </div>
 
             <div className="layout-main">
+              {/* Status Summary Cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8, marginBottom: 16 }}>
+                {STATUS_FLOW.map(s => {
+                  const count = myOrders.filter(o => o.status === s).length;
+                  return (
+                    <div key={s} className="o-card" style={{ padding: "10px 12px", textAlign: "center", cursor: "pointer", borderLeft: `3px solid ${STATUS_CFG[s].color}`, background: statusFilter === s ? STATUS_CFG[s].bg : "var(--card)" }}
+                      onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: STATUS_CFG[s].color }}>{count}</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text3)" }}>{STATUS_CFG[s].label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
               {/* Bakery Stats Chart */}
               <div className="orders" style={{ padding: "0 0 16px" }}>
                  <div className="o-card" style={{ padding: 16, marginBottom: 16 }}>
