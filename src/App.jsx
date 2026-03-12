@@ -192,14 +192,14 @@ input,select,textarea,button{font-family:inherit;}
 /* CSS REVAMP FOR DESKTOP */
 .app{width:100%;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);position:relative;}
 .layout-grid { display: block; }
-.layout-sidebar { display: none; }
+.layout-sidebar { display: block; padding: 8px 12px; }
 .layout-main { width: 100%; }
 
 @media (min-width: 768px) {
   .app { max-width: 1400px; }
   .app-hdr { border-radius: 0 0 16px 16px; margin-bottom: 20px; }
   .layout-grid { display: grid; grid-template-columns: 240px 1fr; gap: 24px; padding: 0 20px; align-items: start; }
-  .layout-sidebar { display: block; position: sticky; top: 90px; }
+  .layout-sidebar { display: block; position: sticky; top: 90px; padding: 0; }
   .layout-main { background: transparent; padding: 0; min-height: calc(100vh - 120px); }
   .prod-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 10px 0 130px; }
   .orders { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 10px 0 130px; align-items: start; }
@@ -1231,13 +1231,12 @@ export default function App() {
 
           <div className="layout-grid">
             <div className="layout-sidebar">
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>CATEGORIES</div>
-              <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 8, paddingLeft: 8 }}>CATEGORIES</div>
+              <div className="cats" style={{ gap: 6, overflow: "auto", flexWrap: "nowrap" }}>
                 {dbCategories.map((c) => (
                   <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`}
-                    style={{ textAlign: "left", padding: "10px 14px", border: "none", background: activeCat === c.id ? "var(--bg2)" : "transparent", color: activeCat === c.id ? "var(--accent)" : "var(--text)", borderRadius: 12, fontSize: 13 }}
                     onClick={() => { setActiveCat(c.id); setSearch(""); }}>
-                    <span style={{ marginRight: 8 }}>{c.icon}</span> {c.name}
+                    <span style={{ marginRight: 4 }}>{c.icon}</span> {c.name}
                   </button>
                 ))}
               </div>
@@ -1390,12 +1389,12 @@ export default function App() {
 
           <div className="layout-grid">
             <div className="layout-sidebar">
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>FILTER</div>
-              <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
-                <button className={`chip ${statusFilter === "all" ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === "all" ? "var(--bg2)" : "transparent", color: statusFilter === "all" ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter("all")}>All ({myOrders.length})</button>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 8, paddingLeft: 8 }}>FILTER</div>
+              <div className="cats" style={{ gap: 6, overflow: "auto", flexWrap: "nowrap" }}>
+                <button className={`chip ${statusFilter === "all" ? "on" : ""}`} onClick={() => setStatusFilter("all")}>All ({myOrders.length})</button>
                 {STATUS_FLOW.map((s) => (
-                  <button key={s} className={`chip ${statusFilter === s ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === s ? "var(--bg2)" : "transparent", color: statusFilter === s ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter(s)}>
-                    <span style={{ marginRight: 8 }}>{STATUS_CFG[s].icon}</span> {STATUS_CFG[s].label} ({myOrders.filter(o => o.status === s).length})
+                  <button key={s} className={`chip ${statusFilter === s ? "on" : ""}`} onClick={() => setStatusFilter(s)}>
+                    {STATUS_CFG[s].icon} {STATUS_CFG[s].label} ({myOrders.filter(o => o.status === s).length})
                   </button>
                 ))}
               </div>
@@ -1620,23 +1619,23 @@ export default function App() {
             <div className="layout-sidebar">
               {!showPM ? (
                 <>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>STATUS FILTER</div>
-                  <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
-                    <button className={`chip ${statusFilter === "all" ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === "all" ? "var(--bg2)" : "transparent", color: statusFilter === "all" ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter("all")}>All ({orders.length})</button>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 8, paddingLeft: 8 }}>STATUS FILTER</div>
+                  <div className="cats" style={{ gap: 6, overflow: "auto", flexWrap: "nowrap" }}>
+                    <button className={`chip ${statusFilter === "all" ? "on" : ""}`} onClick={() => setStatusFilter("all")}>All ({orders.length})</button>
                     {STATUS_FLOW.map((s) => (
-                      <button key={s} className={`chip ${statusFilter === s ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === s ? "var(--bg2)" : "transparent", color: statusFilter === s ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter(s)}>
-                        <span style={{ marginRight: 8 }}>{STATUS_CFG[s].icon}</span> {STATUS_CFG[s].label} ({statusCounts[s]})
+                      <button key={s} className={`chip ${statusFilter === s ? "on" : ""}`} onClick={() => setStatusFilter(s)}>
+                        {STATUS_CFG[s].icon} {STATUS_CFG[s].label} ({statusCounts[s]})
                       </button>
                     ))}
                   </div>
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>CATEGORIES</div>
-                  <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 8, paddingLeft: 8 }}>CATEGORIES</div>
+                  <div className="cats" style={{ gap: 6, overflow: "auto", flexWrap: "nowrap" }}>
                     {dbCategories.map((c) => (
-                      <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: activeCat === c.id ? "var(--bg2)" : "transparent", color: activeCat === c.id ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setActiveCat(c.id)}>
-                        <span style={{ marginRight: 8 }}>{c.icon}</span> {c.name} ({(products[c.id] || []).length})
+                      <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`} onClick={() => setActiveCat(c.id)}>
+                        {c.icon} {c.name} ({(products[c.id] || []).length})
                       </button>
                     ))}
                   </div>
@@ -1844,9 +1843,6 @@ export default function App() {
         </div>
       </>
     );
-  }
-  if (screen === 'bakery-orders') {
-    // Legacy fallback, we handle 'bakery-orders' directly above now. This block can be removed.
   }
 
   return null;
