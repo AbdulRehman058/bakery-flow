@@ -870,7 +870,7 @@ export default function App() {
     return (
       <>
         <style>{CSS}</style>
-        <AuthScreen showToast={showToast} />
+        <AuthScreen showToast={showToast} bakeryNames={bakeries.length > 0 ? bakeries : BAKERY_NAMES} />
         {toast && <div className="toast">✅ {toast}</div>}
       </>
     );
@@ -979,8 +979,9 @@ export default function App() {
             <div style={{ display: "flex", gap: 0, marginBottom: 16, background: "var(--card)", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden" }}>
               {[
                 { id: "overview", label: "📊 Overview" },
-                { id: "orders", label: "📋 Recent Orders" },
+                { id: "orders", label: "📋 Orders" },
                 { id: "bakeries", label: "🏪 Bakeries" },
+                { id: "manage", label: "⚙️ Manage" },
               ].map(tab => (
                 <button key={tab.id} onClick={() => setAdminTab(tab.id)}
                   style={{ flex: 1, padding: "10px 8px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600,
@@ -1103,6 +1104,10 @@ export default function App() {
                   ))
                 )}
               </div>
+            )}
+
+            {adminTab === "manage" && (
+              <BakeryManager bakeries={bakeries} onUpdate={(updated) => setBakeries(updated)} showToast={showToast} />
             )}
           </div>
           {toast && <div className="toast">✅ {toast}</div>}
@@ -1893,14 +1898,126 @@ function CategoryManager({ categories, onUpdate }) {
 }
 
 /* ═══════════════════════════════════════════
+   BAKERY MANAGER (Admin feature)
+   ═══════════════════════════════════════════ */
+function BakeryManager({ bakeries, onUpdate, showToast }) {
+  const [newName, setNewName] = useState("");
+  const [editingIdx, setEditingIdx] = useState(-1);
+  const [editName, setEditName] = useState("");
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name) return;
+    if (bakeries.includes(name)) { showToast("Bakery already exists!"); return; }
+
+    const updated = [...bakeries, name];
+    onUpdate(updated);
+    setNewName("");
+
+    const { error } = await supabase.from('bakeries').insert([{ name }]);
+    if (error) {
+      console.error("Add bakery error:", error);
+      showToast("Failed to add bakery");
+      onUpdate(bakeries); // rollback
+    } else {
+      showToast(`${name} added!`);
+    }
+  }
+
+  async function handleDelete(name) {
+    if (!window.confirm(`Delete "${name}"? This won't delete their orders.`)) return;
+    const updated = bakeries.filter(b => b !== name);
+    onUpdate(updated);
+
+    const { error } = await supabase.from('bakeries').delete().eq('name', name);
+    if (error) {
+      console.error("Delete bakery error:", error);
+      onUpdate(bakeries); // rollback
+    } else {
+      showToast(`${name} removed`);
+    }
+  }
+
+  async function handleRename(oldName) {
+    const name = editName.trim();
+    if (!name || name === oldName) { setEditingIdx(-1); return; }
+    if (bakeries.includes(name)) { showToast("Name already exists!"); return; }
+
+    const updated = bakeries.map(b => b === oldName ? name : b);
+    onUpdate(updated);
+    setEditingIdx(-1);
+
+    const { error } = await supabase.from('bakeries').update({ name }).eq('name', oldName);
+    if (error) {
+      console.error("Rename bakery error:", error);
+      onUpdate(bakeries); // rollback
+    } else {
+      showToast(`Renamed to ${name}`);
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div className="o-card" style={{ padding: 20, marginBottom: 12 }}>
+        <h3 style={{ fontSize: 14, marginBottom: 16 }}>🏪 Manage Bakery Names</h3>
+        <p style={{ fontSize: 12, color: "var(--text3)", marginBottom: 16 }}>
+          Add, rename, or remove bakeries. These names appear in the signup dropdown.
+        </p>
+
+        {/* Add New */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <input className="login-input" style={{ flex: 1, marginBottom: 0 }} placeholder="New bakery name..."
+            value={newName} onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleAdd()} />
+          <button className="btn" style={{ width: "auto", padding: "10px 20px" }} onClick={handleAdd} disabled={!newName.trim()}>
+            + Add
+          </button>
+        </div>
+
+        {/* List */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {bakeries.length === 0 ? (
+            <div className="empty" style={{ padding: 20 }}><div className="ic">🏪</div><p>No bakeries yet. Add one above!</p></div>
+          ) : (
+            bakeries.map((b, i) => (
+              <div key={b} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--bg)", borderRadius: 10, border: "1px solid var(--border)" }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                  {i + 1}
+                </div>
+                {editingIdx === i ? (
+                  <>
+                    <input className="login-input" style={{ flex: 1, marginBottom: 0, padding: "6px 10px", fontSize: 13 }}
+                      value={editName} onChange={e => setEditName(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleRename(b)}
+                      autoFocus />
+                    <button className="btn-s" style={{ background: "#10B981", color: "#fff", padding: "5px 12px" }} onClick={() => handleRename(b)}>✓</button>
+                    <button className="btn-s" style={{ background: "var(--bg2)", color: "var(--text3)", padding: "5px 10px" }} onClick={() => setEditingIdx(-1)}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{b}</span>
+                    <button className="btn-s" style={{ background: "var(--bg2)", color: "var(--text2)", padding: "4px 10px" }} onClick={() => { setEditingIdx(i); setEditName(b); }}>✏️</button>
+                    <button className="btn-s btn-d" style={{ padding: "4px 10px" }} onClick={() => handleDelete(b)}>🗑</button>
+                  </>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
    AUTH SCREEN COMPONENT
    ═══════════════════════════════════════════ */
-function AuthScreen({ showToast }) {
+function AuthScreen({ showToast, bakeryNames }) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signUpRole, setSignUpRole] = useState("bakery");
-  const [signUpBakery, setSignUpBakery] = useState(BAKERY_NAMES[0]);
+  const [signUpBakery, setSignUpBakery] = useState((bakeryNames && bakeryNames[0]) || "");
   const [authLoading, setAuthLoading] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
 
@@ -1957,7 +2074,7 @@ function AuthScreen({ showToast }) {
               </select>
               {signUpRole === "bakery" && (
                 <select className="login-input" value={signUpBakery} onChange={(e) => setSignUpBakery(e.target.value)} style={{ padding: "12px 16px" }}>
-                  {BAKERY_NAMES.map(b => <option key={b} value={b}>{b}</option>)}
+                  {(bakeryNames || BAKERY_NAMES).map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
               )}
             </>
