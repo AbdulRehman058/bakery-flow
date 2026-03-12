@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { supabase } from "./supabase";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from "recharts";
 
 /* ═══════════════════════════════════════════
    CONFIG & DATA
    ═══════════════════════════════════════════ */
 
-const CATEGORIES = [
+const INITIAL_CATEGORIES = [
   { id: "mithai", name: "Mithai", icon: "🍬" },
   { id: "sweets", name: "Sweets", icon: "🍮" },
   { id: "biscuits", name: "Biscuits", icon: "🍪" },
@@ -76,12 +78,7 @@ const DEFAULT_PRODUCTS = {
     { id: "c1", name: "Vanilla Cake", unit: "kg", step: 0.5 },
     { id: "c2", name: "Chocolate Cake", unit: "kg", step: 0.5 },
     { id: "c3", name: "Black Forest", unit: "kg", step: 0.5 },
-    { id: "c4", name: "Pineapple Cake", unit: "kg", step: 0.5 },
-    { id: "c5", name: "Red Velvet", unit: "kg", step: 0.5 },
-    { id: "c6", name: "Cupcakes", unit: "pcs", step: 1 },
-    { id: "c7", name: "Pastry", unit: "pcs", step: 1 },
-    { id: "c8", name: "Brownie", unit: "pcs", step: 1 },
-    { id: "c9", name: "Muffin", unit: "pcs", step: 1 },
+    { id: "c4", name: "Pineapple Cake", unit: "kg", step: 0.5 }
   ],
   milk: [
     { id: "ml1", name: "Full Cream Milk", unit: "ltr", step: 0.5 },
@@ -124,12 +121,11 @@ const DEFAULT_PRODUCTS = {
   other: [],
 };
 
-const STATUS_FLOW = ["pending", "confirmed", "packed", "dispatched", "delivered"];
+const STATUS_FLOW = ["pending", "packed", "dispatching", "delivered"];
 const STATUS_CFG = {
   pending: { label: "Pending", color: "#F59E0B", bg: "#FEF3C7", icon: "⏳" },
-  confirmed: { label: "Confirmed", color: "#0EA5E9", bg: "#E0F2FE", icon: "👍" },
   packed: { label: "Packed", color: "#3B82F6", bg: "#DBEAFE", icon: "📦" },
-  dispatched: { label: "Dispatched", color: "#8B5CF6", bg: "#EDE9FE", icon: "🚚" },
+  dispatching: { label: "Dispatching", color: "#8B5CF6", bg: "#EDE9FE", icon: "🚚" },
   delivered: { label: "Delivered", color: "#10B981", bg: "#D1FAE5", icon: "✅" },
 };
 
@@ -150,9 +146,9 @@ function fmtQty(qty, unit) {
   return `${qty} ${unit}`;
 }
 
-/* ─── Storage ─── */
-async function sGet(key) { try { const r = await window.storage.get(key, true); return r ? JSON.parse(r.value) : null; } catch { return null; } }
-async function sSet(key, val) { try { await window.storage.set(key, JSON.stringify(val), true); } catch (e) { console.error(e); } }
+/* ─── Storage (Deprecated - Now using Supabase) ─── */
+// async function sGet(key) { try { const r = await window.storage.get(key, true); return r ? JSON.parse(r.value) : null; } catch { return null; } }
+// async function sSet(key, val) { try { await window.storage.set(key, JSON.stringify(val), true); } catch (e) { console.error(e); } }
 
 /* ═══════════════════════════════════════════
    STYLES
@@ -170,7 +166,23 @@ const CSS = `
 html{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);-webkit-tap-highlight-color:transparent;}
 input,select,textarea,button{font-family:inherit;}
 
-.app{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);position:relative;}
+/* CSS REVAMP FOR DESKTOP */
+.app{width:100%;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);position:relative;}
+.layout-grid { display: block; }
+.layout-sidebar { display: none; }
+.layout-main { width: 100%; }
+
+@media (min-width: 768px) {
+  .app { max-width: 1400px; }
+  .app-hdr { border-radius: 0 0 16px 16px; margin-bottom: 20px; }
+  .layout-grid { display: grid; grid-template-columns: 240px 1fr; gap: 24px; padding: 0 20px; align-items: start; }
+  .layout-sidebar { display: block; position: sticky; top: 90px; }
+  .layout-main { background: transparent; padding: 0; min-height: calc(100vh - 120px); }
+  .prod-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 10px 0 130px; }
+  .orders { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 10px 0 130px; align-items: start; }
+  .pm { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 20px 0 130px; }
+  .cart-bar { max-width: 1360px; border-radius: 16px; margin-bottom: 12px; }
+}
 
 /* Header */
 .hdr{background:linear-gradient(135deg,#1E1208 0%,#3D2B1A 100%);color:#FAF6F1;padding:14px 18px;position:sticky;top:0;z-index:100;}
@@ -226,7 +238,7 @@ input,select,textarea,button{font-family:inherit;}
 
 /* Modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-end;justify-content:center;}
-.modal{background:var(--bg);border-radius:22px 22px 0 0;max-width:520px;width:100%;max-height:85vh;display:flex;flex-direction:column;animation:slideUp .25s ease-out;}
+.modal{background:var(--bg);border-radius:0;width:100vw;height:100vh;max-width:none;max-height:none;display:flex;flex-direction:column;animation:slideUp .25s ease-out;}
 @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 .m-hdr{padding:18px 18px 10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
 .m-hdr h2{font-family:'Playfair Display',serif;font-size:18px;}
@@ -325,13 +337,70 @@ input,select,textarea,button{font-family:inherit;}
    ═══════════════════════════════════════════ */
 
 export default function App() {
-  const [screen, setScreen] = useState("login");
-  const [bakeryName, setBakeryName] = useState("");
+  const [isAppLoading, setIsAppLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [screen, setScreenState] = useState("loading");
+  
+  function navigate(newScreen) {
+    setScreenState(newScreen);
+  }
+  
+  // To avoid stale closures in the Supabase real-time callback, track these in refs
+  const screenRef = useRef(screen);
+  const bakeryNameRef = useRef("");
+  
+  const [bakeryName, setBakeryNameState] = useState("");
+  
+  function setBakeryName(name) {
+    bakeryNameRef.current = name;
+    setBakeryNameState(name);
+  }
+  
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      handleSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  function handleSession(session) {
+    setSession(session);
+    if (session) {
+      const role = session.user.user_metadata?.role || "bakery";
+      setUserRole(role);
+      const name = session.user.user_metadata?.name || session.user.email;
+      setBakeryName(name);
+
+      if (screenRef.current === "loading" || screenRef.current === "login") {
+         if (role === "admin") navigate("admin");
+         else if (role === "factory") navigate("factory");
+         else if (role === "driver") navigate("driver");
+         else navigate("bakery-orders");
+      }
+    } else {
+      navigate("login");
+      setUserRole(null);
+      setBakeryName("");
+    }
+  }
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
   const [bakeryInput, setBakeryInput] = useState("");
 
   const [products, setProducts] = useState(DEFAULT_PRODUCTS);
   const [orders, setOrders] = useState([]);
+
   const [bakeries, setBakeries] = useState([]);
+  const [dbCategories, setDbCategories] = useState(INITIAL_CATEGORIES);
 
   const [cart, setCart] = useState({});
   const [activeCat, setActiveCat] = useState("mithai");
@@ -340,6 +409,8 @@ export default function App() {
   const [orderNote, setOrderNote] = useState("");
   const [toast, setToast] = useState("");
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [showCatMan, setShowCatMan] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
 
   const [statusFilter, setStatusFilter] = useState("pending");
   const [bakeryFilter, setBakeryFilter] = useState("all");
@@ -349,20 +420,172 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const [o, p, b] = await Promise.all([sGet("bf-orders"), sGet("bf-products"), sGet("bf-bakeries")]);
-      if (o) setOrders(o);
-      if (p) setProducts(p);
-      if (b) setBakeries(b);
+      // Fetch initial data from Supabase
+      const [
+        { data: oData },
+        { data: pData },
+        { data: bData }
+      ] = await Promise.all([
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('products').select('*'),
+        supabase.from('bakeries').select('*')
+      ]);
+
+      if (oData) {
+        // Map from Supabase format to local format
+        const formattedOrders = oData.map(o => ({
+          id: o.id,
+          bakery: o.bakery_name,
+          status: o.status,
+          note: o.note,
+          items: o.items,
+          timestamp: new Date(o.created_at).getTime()
+        }));
+        setOrders(formattedOrders);
+        lastPollOrders = formattedOrders; // Initialize tracker
+      }
+
+      if (pData) {
+        // Group flat product list into the category object structure
+        const prodMap = { ...DEFAULT_PRODUCTS };
+        // Empty out arrays that have data to avoid mixing placeholders with real data if we want
+        for (const cat in prodMap) { prodMap[cat] = []; } // Let's clear defaults and only show real DB products
+
+        pData.forEach(p => {
+          if (!prodMap[p.category_id]) prodMap[p.category_id] = [];
+          prodMap[p.category_id].push({
+            id: p.id,
+            name: p.name,
+            unit: p.unit,
+            step: Number(p.step),
+            image: p.image_url || "",
+            is_available: p.is_available !== false // handle missing col via default true
+          });
+        });
+        setProducts(prodMap);
+      }
+
+      if (bData) {
+        setBakeries(bData.map(b => b.name));
+      }
+      
+      setIsAppLoading(false);
     })();
+    
+    let lastPollOrders = []; // Outer variable out of react's scope
+
+    // Polling fallback mechanism in case Supabase real-time is disabled on the backend table
+    const pollInterval = setInterval(async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (error || !data) return;
+      
+      const formattedData = data.map(o => ({
+        id: o.id,
+        bakery: o.bakery_name,
+        status: o.status,
+        note: o.note,
+        items: o.items || [],
+        timestamp: new Date(o.created_at).getTime()
+      }));
+      
+      // Perform strict local comparison outside of React State
+      if (lastPollOrders.length > 0) {
+        formattedData.forEach(newOrder => {
+          const oldOrder = lastPollOrders.find(o => o.id === newOrder.id);
+          if (oldOrder && oldOrder.status !== newOrder.status) {
+            if (screenRef.current === 'bakery-orders' && newOrder.bakery === bakeryNameRef.current) {
+               showToast(`Order #${newOrder.id.slice(-6).toUpperCase()} is now ${STATUS_CFG[newOrder.status].label}!`);
+               if (Notification.permission === "granted") {
+                  new Notification("Order Updated", { body: `Your order is now ${STATUS_CFG[newOrder.status].label}` });
+               }
+            }
+          }
+        });
+      }
+      
+      lastPollOrders = formattedData;
+      setOrders(formattedData);
+      
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   useEffect(() => {
-    const iv = setInterval(async () => {
-      const [o, p] = await Promise.all([sGet("bf-orders"), sGet("bf-products")]);
-      if (o) setOrders(o);
-      if (p) setProducts(p);
-    }, 4000);
-    return () => clearInterval(iv);
+    // Setup real-time subscriptions for live synced updates
+    const channel = supabase.channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+           if (screenRef.current === 'factory') {
+              if (Notification.permission === "granted") {
+                 new Notification("New Order!", { body: `Order received from ${payload.new.bakery_name}` });
+              }
+              const audio = new Audio("https://actions.google.com/sounds/v1/alarms/positive_notification.ogg");
+              audio.play().catch(() => {});
+           }
+           setOrders(prev => [{
+              id: payload.new.id,
+              bakery: payload.new.bakery_name,
+              status: payload.new.status,
+              note: payload.new.note,
+              items: payload.new.items,
+              timestamp: new Date(payload.new.created_at).getTime()
+           }, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+           // Because Postgres REPLICA IDENTITY might not be FULL or RLS might strip payload data,
+           // we act on the ping by re-fetching the updated row explicitly.
+           supabase.from('orders').select('*').eq('id', payload.new.id).single()
+             .then(({ data: updatedRow }) => {
+               if (!updatedRow) return;
+               
+               setOrders(prev => {
+                 const existing = prev.find(o => o.id === updatedRow.id);
+                 if (!existing) return prev;
+                 
+                 return prev.map(o => o.id === updatedRow.id ? {
+                    id: updatedRow.id,
+                    bakery: updatedRow.bakery_name,
+                    status: updatedRow.status,
+                    note: updatedRow.note,
+                    items: updatedRow.items || [], // ensure array
+                    timestamp: new Date(updatedRow.created_at).getTime()
+                 } : o);
+               });
+             });
+        } else if (payload.eventType === 'DELETE') {
+           setOrders(prev => prev.filter(o => o.id !== payload.old.id));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, async (payload) => {
+         // for products, a refetch is safer to ensure categories stay grouped correctly, 
+         // but we can optimize it if it becomes a bottleneck. It happens much less frequently than orders.
+         const { data } = await supabase.from('products').select('*');
+         if (data) {
+           const pm = {};
+           dbCategories.forEach(c => pm[c.id] = []);
+           data.forEach(p => {
+             if (pm[p.category_id]) pm[p.category_id].push({ 
+               id: p.id, name: p.name, unit: p.unit, step: Number(p.step), image: p.image_url || "", is_available: p.is_available !== false 
+             });
+           });
+           setProducts(pm);
+         }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (Notification.permission === "default") {
+       Notification.requestPermission();
+    }
   }, []);
 
   useEffect(() => {
@@ -373,16 +596,8 @@ export default function App() {
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2500); }
 
-  async function loginBakery() {
-    const name = bakeryInput.trim();
-    if (!name) return;
-    setBakeryName(name);
-    if (!bakeries.includes(name)) {
-      const nb = [...bakeries, name];
-      setBakeries(nb);
-      await sSet("bf-bakeries", nb);
-    }
-    setScreen("bakery");
+  async function logout() {
+    await supabase.auth.signOut();
   }
 
   function findProduct(pid) {
@@ -419,20 +634,42 @@ export default function App() {
 
   async function placeOrder() {
     if (cartItems.length === 0) return;
-    const newOrder = {
-      id: uid(),
-      bakery: bakeryName,
-      timestamp: Date.now(),
-      status: "pending",
+
+    const formattedItems = cartItems.map(([pid, qty]) => {
+      const p = findProduct(pid);
+      return { productId: pid, name: p?.name || pid, qty, unit: p?.unit || "", step: p?.step || 1, image: p?.image || "" };
+    });
+
+    // 1. Insert into Supabase Orders
+    const { data: insertedOrder, error: oErr } = await supabase.from('orders').insert([{
+      bakery_name: bakeryName,
+      status: 'pending',
       note: orderNote.trim(),
-      items: cartItems.map(([pid, qty]) => {
-        const p = findProduct(pid);
-        return { productId: pid, name: p?.name || pid, qty, unit: p?.unit || "", step: p?.step || 1, image: p?.image || "" };
-      }),
+      items: formattedItems
+    }]).select().single();
+
+    if (oErr) {
+      console.error("Order error", oErr);
+      showToast("Failed to place order.");
+      return;
+    }
+
+    // 2. Insert into Supabase Logs
+    await supabase.from('logs').insert([{
+      action: 'ORDER_PLACED',
+      details: `${bakeryName} placed an order with ${formattedItems.length} items.`
+    }]);
+
+    const newOrderLocal = {
+      id: insertedOrder.id,
+      bakery: insertedOrder.bakery_name,
+      timestamp: new Date(insertedOrder.created_at).getTime(),
+      status: insertedOrder.status,
+      note: insertedOrder.note,
+      items: insertedOrder.items
     };
-    const updated = [newOrder, ...orders];
-    setOrders(updated);
-    await sSet("bf-orders", updated);
+
+    setOrders([newOrderLocal, ...orders]);
     setCart({});
     setOrderNote("");
     setShowCart(false);
@@ -440,21 +677,81 @@ export default function App() {
   }
 
   async function updateStatus(oid, ns) {
-    const updated = orders.map((o) => o.id === oid ? { ...o, status: ns, [`${ns}At`]: Date.now() } : o);
-    setOrders(updated);
-    await sSet("bf-orders", updated);
+    // 1. Update in Supabase
+    const { error } = await supabase.from('orders').update({ status: ns, updated_at: new Date().toISOString() }).eq('id', oid);
+    if (!error) {
+      setOrders(orders.map((o) => o.id === oid ? { ...o, status: ns, [`${ns}At`]: Date.now() } : o));
+
+      const targetOrder = orders.find(o => o.id === oid);
+      await supabase.from('logs').insert([{
+        action: 'STATUS_UPDATED',
+        details: `Order for ${targetOrder?.bakery || 'Unknown'} updated to ${ns}.`
+      }]);
+    }
+  }
+
+  async function cancelOrder(oid) {
+    if (!window.confirm("Are you sure you want to cancel this order?")) return;
+    const { error } = await supabase.from('orders').delete().eq('id', oid);
+    if (!error) {
+      setOrders(orders.filter(o => o.id !== oid));
+      showToast("Order cancelled.");
+    }
   }
 
   async function addProduct(catId, prod) {
-    const up = { ...products, [catId]: [...(products[catId] || []), prod] };
-    setProducts(up);
-    await sSet("bf-products", up);
+    const { error } = await supabase.from('products').insert([{
+      category_id: catId,
+      name: prod.name,
+      unit: prod.unit,
+      step: prod.step,
+      image_url: prod.image || null
+    }]);
+
+    if (!error) {
+      await supabase.from('logs').insert([{ action: 'PRODUCT_ADDED', details: `Added ${prod.name} to ${catId}` }]);
+      // Optimistic upate is handled by realtime subscription mostly, but we can do it here too:
+      // setProducts({ ...products, [catId]: [...(products[catId] || []), prod] });
+    } else {
+      console.error("Add Product Error:", error);
+      showToast("Failed to add product");
+    }
+  }
+
+  async function addProduct(catId, prod) {
+    const newP = { ...prod, is_available: true };
+    setProducts(prev => ({
+      ...prev, [catId]: [...(prev[catId] || []), newP]
+    }));
+
+    await supabase.from('products').insert([{
+      name: prod.name, category_id: catId, unit: prod.unit, step: prod.step, image_url: prod.image || null, is_available: true
+    }]);
+  }
+
+  async function updateProductDetails(catId, pid, updatedProd) {
+    const pOrg = findProduct(pid);
+    if (!pOrg) return;
+
+    setProducts(prev => {
+       const updated = { ...prev };
+       updated[catId] = updated[catId].map(p => p.id === pid ? { ...p, ...updatedProd } : p);
+       return updated;
+    });
+
+    await supabase.from('products').update({
+       name: updatedProd.name,
+       unit: updatedProd.unit,
+       step: updatedProd.step,
+       image_url: updatedProd.image || null
+    }).eq('name', pOrg.name); // Using name as fallback identifier
   }
 
   async function removeProduct(catId, pid) {
-    const up = { ...products, [catId]: products[catId].filter((p) => p.id !== pid) };
-    setProducts(up);
-    await sSet("bf-products", up);
+    const { error } = await supabase.from('products').delete().eq('id', pid);
+    if (!error) {
+      await supabase.from('logs').insert([{ action: 'PRODUCT_REMOVED', details: `Removed product ID ${pid}` }]);
+    }
   }
 
   const uniqueBakeries = [...new Set(orders.map((o) => o.bakery))];
@@ -496,211 +793,28 @@ export default function App() {
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   }
 
-  /* ── LOGIN ── */
-  if (screen === "login") {
+  if (isAppLoading || screen === "loading") {
     return (
-      <>
+      <div className="app" style={{ alignItems: "center", justifyContent: "center" }}>
         <style>{CSS}</style>
-        <div className="login">
-          <div className="login-logo">🍞</div>
-          <h2>BakeryFlow</h2>
-          <p>Order & Dispatch Management</p>
-
-          <div className="login-card">
-            <h3>🏪 I'm at a Bakery</h3>
-            {bakeries.length > 0 && bakeries.map((b) => (
-              <button key={b} className="btn-o" style={{ width: "100%", marginBottom: 6, padding: "11px 14px", fontSize: 13, textAlign: "left" }}
-                onClick={() => { setBakeryName(b); setScreen("bakery"); }}>
-                🏪 {b}
-              </button>
-            ))}
-            {bakeries.length > 0 && <div style={{ fontSize: 11, color: "var(--text3)", margin: "10px 0 6px" }}>Or add new bakery:</div>}
-            <input className="login-input" placeholder="Bakery name (e.g. Khan Bakery)"
-              value={bakeryInput} onChange={(e) => setBakeryInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && loginBakery()} />
-            <button className="btn" onClick={loginBakery} disabled={!bakeryInput.trim()}>Enter as Bakery →</button>
-          </div>
-
-          <div className="login-divider">OR</div>
-
-          <div className="login-card">
-            <h3>🏭 I'm at the Factory</h3>
-            <button className="btn" style={{ background: "var(--text)" }} onClick={() => setScreen("factory")}>
-              Enter as Factory →
-            </button>
-          </div>
+        <div style={{ textAlign: "center" }}>
+          <div className="login-logo" style={{ fontSize: 40, marginBottom: 16 }}>🍞</div>
+          <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 20 }}>Loading BakeryFlow...</h2>
         </div>
-      </>
+      </div>
     );
   }
 
-  /* ── BAKERY ── */
-  if (screen === "bakery") {
+  if (printOrder) {
     return (
       <>
         <style>{CSS}</style>
-        <div className="app">
-          <div className="hdr">
-            <div className="hdr-row">
-              <div>
-                <h1>🍞 BakeryFlow</h1>
-                <div className="hdr-sub">🏪 {bakeryName}</div>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="hdr-btn" onClick={() => {
-                  setScreen("factory"); setBakeryFilter(bakeryName); setStatusFilter("all");
-                }}>📋 My Orders</button>
-                <button className="hdr-btn" onClick={() => setScreen("login")}>↩</button>
-              </div>
-            </div>
-          </div>
-
-          <div className="search" style={{ marginTop: 10 }}>
-            <input placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
-
-          <div className="cats">
-            {CATEGORIES.map((c) => (
-              <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`}
-                onClick={() => { setActiveCat(c.id); setSearch(""); }}>
-                {c.icon} {c.name}
-              </button>
-            ))}
-          </div>
-
-          <div className="quick-add" onClick={() => setShowQuickAdd(true)}>
-            + Add Custom Item to {CATEGORIES.find(c => c.id === activeCat)?.name || "list"}
-          </div>
-
-          {showQuickAdd && (
-            <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowQuickAdd(false)}>
-              <div className="modal" style={{ maxHeight: "50vh" }}>
-                <div className="m-hdr">
-                  <h2>Add Custom Item</h2>
-                  <button className="m-close" onClick={() => setShowQuickAdd(false)}>✕</button>
-                </div>
-                <div className="m-body">
-                  <QuickAddForm catId={activeCat} onAdd={(prod) => { addProduct(activeCat, prod); setShowQuickAdd(false); showToast(`${prod.name} added!`); }} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="prod-list">
-            {catProducts.length === 0 ? (
-              <div className="empty"><div className="ic">📭</div><p>No products here yet. Tap "Add Custom Item" above!</p></div>
-            ) : (
-              catProducts.map((p) => {
-                const qty = cart[p.id] || 0;
-                return (
-                  <div className={`prod ${qty > 0 ? "has-qty" : ""}`} key={p.id}>
-                    {p.image ? <img src={p.image} className="prod-img" alt="" loading="lazy" /> : <div className="prod-img">🍞</div>}
-                    <div className="prod-info">
-                      <div className="prod-name">{p.name}</div>
-                      <div className="prod-unit">
-                        {p.unit === "g" ? `step: ${p.step}g` :
-                          p.unit === "ml" ? `step: ${p.step}ml` :
-                            p.unit === "kg" && p.step < 1 ? `step: ${p.step * 1000}g` :
-                              p.unit === "ltr" && p.step < 1 ? `step: ${p.step * 1000}ml` :
-                                `step: ${p.step} ${p.unit}`}
-                      </div>
-                    </div>
-                    <div className="qty-area">
-                      <button className="qty-b" onClick={() => adjQty(p.id, -1)}>−</button>
-                      <input className="qty-in" type="number" step={p.step} min="0"
-                        value={qty || ""} placeholder="0"
-                        onChange={(e) => setQtyDirect(p.id, e.target.value)} />
-                      <span className="qty-unit-tag">{p.unit}</span>
-                      <button className="qty-b" onClick={() => adjQty(p.id, 1)}>+</button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {cartItems.length > 0 && (
-            <div className="cart-bar" onClick={() => setShowCart(true)}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="cart-cnt">{cartItems.length}</span>
-                <span style={{ fontSize: 13 }}>{cartItems.length} item{cartItems.length > 1 ? "s" : ""}</span>
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>Review Order →</div>
-            </div>
-          )}
-
-          {showCart && (
-            <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowCart(false)}>
-              <div className="modal">
-                <div className="m-hdr">
-                  <h2>🛒 Review Order</h2>
-                  <button className="m-close" onClick={() => setShowCart(false)}>✕</button>
-                </div>
-                <div className="m-body">
-                  {cartItems.map(([pid, qty]) => {
-                    const p = findProduct(pid);
-                    if (!p) return null;
-                    return (
-                      <div className="c-item" key={pid}>
-                        {p.image && <img src={p.image} style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", marginRight: 10 }} alt="" loading="lazy" />}
-                        <div className="c-item-info">
-                          <div className="c-item-name">{p.name}</div>
-                          <div className="c-item-qty">{fmtQty(qty, p.unit)}</div>
-                        </div>
-                        <div className="qty-area" style={{ marginRight: 6 }}>
-                          <button className="qty-b" style={{ width: 26, height: 26, fontSize: 13 }} onClick={() => adjQty(pid, -1)}>−</button>
-                          <span style={{ fontWeight: 700, fontSize: 13, minWidth: 40, textAlign: "center" }}>{fmtQty(qty, p.unit)}</span>
-                          <button className="qty-b" style={{ width: 26, height: 26, fontSize: 13 }} onClick={() => adjQty(pid, 1)}>+</button>
-                        </div>
-                        <button className="c-item-rm" onClick={() => setQtyDirect(pid, 0)}>🗑</button>
-                      </div>
-                    );
-                  })}
-                  <textarea className="note" rows={2} placeholder="Note for factory (optional)..."
-                    value={orderNote} onChange={(e) => setOrderNote(e.target.value)} />
-                </div>
-                <div className="m-foot">
-                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>
-                    📦 {cartItems.length} items from <strong>{bakeryName}</strong>
-                  </div>
-                  <button className="btn" onClick={placeOrder}>Place Order →</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {toast && <div className="toast">✅ {toast}</div>}
-        </div>
-      </>
-    );
-  }
-
-  /* ── FACTORY ── */
-  if (screen === "factory") {
-    return (
-      <>
-        <style>{CSS}</style>
-        <div className={`app ${printOrder ? "print-active" : ""}`}>
-          <div className="hdr">
-            <div className="hdr-row">
-              <div>
-                <h1>🏭 BakeryFlow</h1>
-                <div className="hdr-sub">Factory Dispatch</div>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {!showPM && <button className="hdr-btn" onClick={() => setShowSummary(true)}>📊 Today</button>}
-                <button className="hdr-btn" onClick={() => setShowPM(!showPM)}>
-                  {showPM ? "📋 Orders" : "⚙️ Products"}
-                </button>
-                <button className="hdr-btn" onClick={() => { setScreen("login"); setBakeryFilter("all"); }}>↩</button>
-              </div>
-            </div>
-          </div>
-
-          {printOrder && (
-            <div className="print-sec">
+        <div className="app print-active">
+            <div className="print-sec" style={{ display: 'block', padding: 20, minHeight: '100vh', background: '#fff' }}>
               <div style={{ paddingBottom: 20, borderBottom: "2px solid #000", marginBottom: 20 }}>
-                <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, margin: 0 }}>BakeryFlow Dispatch Slip</h2>
+                <h2 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, margin: 0 }}>
+                  {screen === "bakery-orders" ? `${printOrder.bakery} - Invoice` : "BakeryFlow Dispatch Slip"}
+                </h2>
                 <div style={{ fontSize: 14, marginTop: 4 }}>🏪 {printOrder.bakery}</div>
                 <div style={{ fontSize: 14, marginTop: 4 }}>🔖 Order #{printOrder.id.slice(-6).toUpperCase()}</div>
                 <div style={{ fontSize: 13, color: "#555", marginTop: 4 }}>📅 {fmtDate(printOrder.timestamp)}</div>
@@ -727,76 +841,337 @@ export default function App() {
                 <button className="btn-o" style={{ width: "auto", padding: "10px 20px" }} onClick={() => setPrintOrder(null)}>Done</button>
               </div>
             </div>
-          )}
+        </div>
+      </>
+    );
+  }
 
-          {showSummary && (
-            <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowSummary(false)}>
-              <div className="modal" style={{ maxHeight: "80vh" }}>
-                <div className="m-hdr">
-                  <h2>📊 Today's Summary</h2>
-                  <button className="m-close" onClick={() => setShowSummary(false)}>✕</button>
+  /* ── LOGIN ── */
+  if (!session && screen === "login") {
+    return (
+      <>
+        <style>{CSS}</style>
+        <AuthScreen showToast={showToast} />
+        {toast && <div className="toast">✅ {toast}</div>}
+      </>
+    );
+  }
+
+  /* ── ADMIN ── */
+  if (screen === "admin" && userRole === "admin") {
+    const deliveredCount = orders.filter(o => o.status === "delivered").length;
+    const rev = orders.filter(o => o.status === "delivered").length * 520; // Dummy rev calc
+    const activeBakeries = new Set(orders.map(o => o.bakery)).size;
+
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="app">
+          <div className="hdr app-hdr">
+            <div className="hdr-row">
+              <div>
+                <h1>👑 BakeryFlow Admin</h1>
+                <div className="hdr-sub">Owner Dashboard</div>
+              </div>
+              <button className="hdr-btn" onClick={logout}>🚪 Logout</button>
+            </div>
+          </div>
+          <div className="layout-grid">
+            <div className="layout-main" style={{ marginTop: 2 }}>
+              
+              {/* GOD MODE NAVIGATION */}
+              <div className="o-card" style={{ padding: "20px", marginBottom: "16px", background: "linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%)", color: "white", border: "1px solid #444" }}>
+                <h3 style={{ fontSize: 16, marginBottom: 16, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                  ⚡️ Quick Access (God Mode)
+                </h3>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                  <button className="btn" style={{ flex: "1 1 120px", background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }} onClick={() => navigate("factory")}>🏭 Factory View</button>
+                  <button className="btn" style={{ flex: "1 1 120px", background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)" }} onClick={() => navigate("driver")}>🚚 Driver View</button>
+                  <div style={{ display: "flex", flex: "2 1 200px", gap: 8 }}>
+                     <select className="login-input" style={{ flex: 1, background: "rgba(0,0,0,0.4)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", padding: "10px" }}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setBakeryName(e.target.value);
+                            navigate("bakery-orders");
+                          }
+                        }}
+                     >
+                       <option value="">View as Bakery...</option>
+                       {bakeries.map(b => <option key={b} value={b}>{b}</option>)}
+                     </select>
+                  </div>
                 </div>
-                <div className="m-body">
-                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12 }}>Total quantities ordered today across all bakeries.</div>
-                  {getDailySummary().length === 0 ? (
-                    <div className="empty"><div className="ic">🤷</div><p>No orders today</p></div>
-                  ) : (
-                    getDailySummary().map((item, idx) => (
-                      <div key={idx} className="c-item" style={{ padding: "10px 0" }}>
-                        {item.image ? <img src={item.image} style={{ width: 28, height: 28, borderRadius: 6, objectFit: "cover", marginRight: 10 }} alt="" loading="lazy" /> : <div className="pm-img" style={{ width: 28, height: 28, fontSize: 14, marginRight: 10 }}>🍞</div>}
-                        <span className="c-item-info c-item-name">{item.name}</span>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--accent)" }}>{fmtQty(item.qty, item.unit)}</span>
-                      </div>
-                    ))
-                  )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, padding: "0 0 20px" }}>
+                <div className="o-card" style={{ padding: 20, textAlign: "center", borderTop: "4px solid var(--accent)" }}>
+                   <div style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>TOTAL ORDERS</div>
+                   <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>{orders.length}</div>
+                </div>
+                <div className="o-card" style={{ padding: 20, textAlign: "center", borderTop: "4px solid #10B981" }}>
+                   <div style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>DELIVERED</div>
+                   <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>{deliveredCount}</div>
+                </div>
+                <div className="o-card" style={{ padding: 20, textAlign: "center", borderTop: "4px solid #8B5CF6" }}>
+                   <div style={{ fontSize: 12, color: "var(--text3)", fontWeight: 600 }}>ACTIVE BAKERIES</div>
+                   <div style={{ fontSize: 32, fontWeight: 700, marginTop: 8 }}>{activeBakeries}</div>
+                </div>
+              </div>
+
+              <div style={{ padding: "0 16px 20px" }}>
+                <div className="o-card" style={{ padding: 20 }}>
+                  <h3 style={{ fontSize: 15, marginBottom: 20 }}>Top Products Overall</h3>
+                  <div style={{ height: 250 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={getDailySummary().slice(0, 10)} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-45} textAnchor="end" height={60} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip cursor={{ fill: '#f5f5f5' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="qty" fill="var(--text)" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      </>
+    );
+  }
 
-          {!showPM ? (
-            <>
-              {uniqueBakeries.length > 1 && (
-                <div className="bk-filter" style={{ marginTop: 8 }}>
-                  <button className={`bk-chip ${bakeryFilter === "all" ? "on" : ""}`} onClick={() => setBakeryFilter("all")}>All Bakeries</button>
-                  {uniqueBakeries.map((b) => (
-                    <button key={b} className={`bk-chip ${bakeryFilter === b ? "on" : ""}`} onClick={() => setBakeryFilter(b)}>🏪 {b}</button>
-                  ))}
-                </div>
-              )}
+  /* ── BAKERY ── */
+  if (screen === "bakery") {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="app">
+          <div className="hdr app-hdr">
+            <div className="hdr-row">
+              <div>
+                <h1>🍞 BakeryFlow</h1>
+                <div className="hdr-sub">🏪 {bakeryName}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="hdr-btn" onClick={() => navigate("bakery-orders")}>📋 My Orders</button>
+                {userRole === "admin" ? (
+                   <button className="hdr-btn" style={{ background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" }} onClick={() => navigate("admin")}>👑 Admin</button>
+                ) : (
+                   <button className="hdr-btn" onClick={logout}>🚪 Logout</button>
+                )}
+              </div>
+            </div>
+          </div>
 
-              <div className="f-tabs">
-                <button className={`f-tab ${statusFilter === "all" ? "on" : ""}`} onClick={() => setStatusFilter("all")}>All {orders.length}</button>
-                {STATUS_FLOW.map((s) => (
-                  <button key={s} className={`f-tab ${statusFilter === s ? "on" : ""}`} onClick={() => setStatusFilter(s)}>
-                    {STATUS_CFG[s].icon} {statusCounts[s]}
+          <div className="layout-grid">
+            <div className="layout-sidebar">
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>CATEGORIES</div>
+              <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
+                {dbCategories.map((c) => (
+                  <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`}
+                    style={{ textAlign: "left", padding: "10px 14px", border: "none", background: activeCat === c.id ? "var(--bg2)" : "transparent", color: activeCat === c.id ? "var(--accent)" : "var(--text)", borderRadius: 12, fontSize: 13 }}
+                    onClick={() => { setActiveCat(c.id); setSearch(""); }}>
+                    <span style={{ marginRight: 8 }}>{c.icon}</span> {c.name}
                   </button>
                 ))}
               </div>
+            </div>
 
-              <div className="orders">
-                {filteredOrders.length === 0 ? (
-                  <div className="empty"><div className="ic">📭</div><p>No {statusFilter !== "all" ? statusFilter : ""} orders</p></div>
+            <div className="layout-main">
+              <div className="search" style={{ margin: "0 0 16px 0" }}>
+                <input placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+
+              <div className="quick-add" style={{ margin: "0 0 16px 0" }} onClick={() => setShowQuickAdd(true)}>
+                + Add Custom Item to {dbCategories.find(c => c.id === activeCat)?.name || "list"}
+              </div>
+
+              {showQuickAdd && (
+                <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowQuickAdd(false)}>
+                  <div className="modal">
+                    <div className="m-hdr">
+                      <h2>Add Custom Item</h2>
+                      <button className="m-close" onClick={() => setShowQuickAdd(false)}>✕</button>
+                    </div>
+                    <div className="m-body">
+                      <QuickAddForm catId={activeCat} onAdd={(prod) => { addProduct(activeCat, prod); setShowQuickAdd(false); showToast(`${prod.name} added!`); }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="prod-list">
+                {catProducts.length === 0 ? (
+                  <div className="empty"><div className="ic">📭</div><p>No products here yet. Tap "Add Custom Item" above!</p></div>
                 ) : (
-                  filteredOrders.map((order) => {
-                    const sc = STATUS_CFG[order.status];
-                    const si = STATUS_FLOW.indexOf(order.status);
-                    const next = si + 1 < STATUS_FLOW.length ? STATUS_FLOW[si + 1] : null;
-                    const prev = si - 1 >= 0 ? STATUS_FLOW[si - 1] : null;
+                  catProducts.map((p) => {
+                    const qty = cart[p.id] || 0;
+                    return (
+                      <div className={`prod ${qty > 0 ? "has-qty" : ""}`} key={p.id}>
+                        {p.image ? <img src={p.image} className="prod-img" alt="" loading="lazy" /> : <div className="prod-img">🍞</div>}
+                        <div className="prod-info">
+                          <div className="prod-name" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ textDecoration: p.is_available === false ? "line-through" : "none", opacity: p.is_available === false ? 0.5 : 1 }}>{p.name}</span>
+                            {p.is_available === false && <span style={{ fontSize: 10, background: "#FEE2E2", color: "#DC2626", padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>SOLD OUT</span>}
+                          </div>
+                          <div className="prod-unit">
+                            {p.unit === "g" ? `step: ${p.step}g` :
+                              p.unit === "ml" ? `step: ${p.step}ml` :
+                                p.unit === "kg" && p.step < 1 ? `step: ${p.step * 1000}g` :
+                                  p.unit === "ltr" && p.step < 1 ? `step: ${p.step * 1000}ml` :
+                                    `step: ${p.step} ${p.unit}`}
+                          </div>
+                        </div>
+                        {p.is_available === false ? (
+                           <div className="qty-area" style={{ background: "transparent" }}>
+                             <button className="qty-b" style={{ background: "#F3F4F6", color: "#9CA3AF", cursor: "not-allowed", border: "1px solid #E5E7EB", width: "100%", borderRadius: "8px" }} disabled>Unavailable</button>
+                           </div>
+                        ) : (
+                          <div className="qty-area">
+                            <button className="qty-b" onClick={() => adjQty(p.id, -1)}>−</button>
+                            <input className="qty-in" type="number" step={p.step} min="0"
+                              value={qty || ""} placeholder="0"
+                              onChange={(e) => setQtyDirect(p.id, e.target.value)} />
+                            <span className="qty-unit-tag">{p.unit}</span>
+                            <button className="qty-b" onClick={() => adjQty(p.id, 1)}>+</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
+              {cartItems.length > 0 && (
+                <div className="cart-bar" onClick={() => setShowCart(true)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="cart-cnt">{cartItems.length}</span>
+                    <span style={{ fontSize: 13 }}>{cartItems.length} item{cartItems.length > 1 ? "s" : ""}</span>
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>Review Order →</div>
+                </div>
+              )}
+
+              {showCart && (
+                <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowCart(false)}>
+                  <div className="modal">
+                    <div className="m-hdr">
+                      <h2>🛒 Review Order</h2>
+                      <button className="m-close" onClick={() => setShowCart(false)}>✕</button>
+                    </div>
+                    <div className="m-body">
+                      {cartItems.map(([pid, qty]) => {
+                        const p = findProduct(pid);
+                        if (!p) return null;
+                        return (
+                          <div className="c-item" key={pid}>
+                            {p.image && <img src={p.image} style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", marginRight: 10 }} alt="" loading="lazy" />}
+                            <div className="c-item-info">
+                              <div className="c-item-name">{p.name}</div>
+                              <div className="c-item-qty">{fmtQty(qty, p.unit)}</div>
+                            </div>
+                            <div className="qty-area" style={{ marginRight: 6 }}>
+                              <button className="qty-b" style={{ width: 26, height: 26, fontSize: 13 }} onClick={() => adjQty(pid, -1)}>−</button>
+                              <span style={{ fontWeight: 700, fontSize: 13, minWidth: 40, textAlign: "center" }}>{fmtQty(qty, p.unit)}</span>
+                              <button className="qty-b" style={{ width: 26, height: 26, fontSize: 13 }} onClick={() => adjQty(pid, 1)}>+</button>
+                            </div>
+                            <button className="c-item-rm" onClick={() => setQtyDirect(pid, 0)}>🗑</button>
+                          </div>
+                        );
+                      })}
+                      <textarea className="note" rows={2} placeholder="Note for factory (optional)..."
+                        value={orderNote} onChange={(e) => setOrderNote(e.target.value)} />
+                    </div>
+                    <div className="m-foot">
+                      <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 8 }}>
+                        📦 {cartItems.length} items from <strong>{bakeryName}</strong>
+                      </div>
+                      <button className="btn" onClick={placeOrder}>Place Order →</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>{/* end layout-main */}
+          </div>{/* end layout-grid */}
+
+          {toast && <div className="toast">✅ {toast}</div>}
+        </div>
+      </>
+    );
+  }
+
+  /* ── BAKERY ORDERS ── */
+  if (screen === "bakery-orders") {
+    const myOrders = orders.filter(o => o.bakery === bakeryName);
+
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="app">
+          <div className="hdr app-hdr">
+            <div className="hdr-row">
+              <div>
+                <h1>📦 My Orders</h1>
+                <div className="hdr-sub">🏪 {bakeryName}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="hdr-btn" onClick={() => navigate("bakery")}>← Back to Menu</button>
+                {userRole === "admin" && <button className="hdr-btn" style={{ background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" }} onClick={() => navigate("admin")}>👑 Admin</button>}
+              </div>
+            </div>
+          </div>
+
+          <div className="layout-grid">
+            <div className="layout-sidebar">
+              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>FILTER</div>
+              <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
+                <button className={`chip ${statusFilter === "all" ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === "all" ? "var(--bg2)" : "transparent", color: statusFilter === "all" ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter("all")}>All ({myOrders.length})</button>
+                {STATUS_FLOW.map((s) => (
+                  <button key={s} className={`chip ${statusFilter === s ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === s ? "var(--bg2)" : "transparent", color: statusFilter === s ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter(s)}>
+                    <span style={{ marginRight: 8 }}>{STATUS_CFG[s].icon}</span> {STATUS_CFG[s].label} ({myOrders.filter(o => o.status === s).length})
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="layout-main">
+              {/* Bakery Stats Chart */}
+              <div className="orders" style={{ padding: "0 0 16px" }}>
+                 <div className="o-card" style={{ padding: 16, marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 14, marginBottom: 12 }}>Your Order Volume (Last 7 Orders)</h3>
+                    <div style={{ height: 160 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={[...myOrders].reverse().slice(-7).map((o, i) => ({ name: `Order ${i+1}`, items: o.items.reduce((sum, item) => sum + item.qty, 0) }))}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                          <XAxis dataKey="name" hide />
+                          <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: 'var(--text3)' }} width={30} />
+                          <Tooltip cursor={{ stroke: 'var(--border)', strokeWidth: 1 }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: 'var(--shadow)', fontSize: 12 }} />
+                          <Line type="monotone" dataKey="items" stroke="var(--accent)" strokeWidth={3} dot={{ r: 4, fill: 'var(--accent)', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="orders" style={{ padding: "0 0 130px" }}>
+                {myOrders.filter(o => statusFilter === "all" || o.status === statusFilter).length === 0 ? (
+                  <div className="empty"><div className="ic">📭</div><p>No {statusFilter !== "all" ? statusFilter : ""} orders yet</p></div>
+                ) : (
+                  myOrders.filter(o => statusFilter === "all" || o.status === statusFilter).map((order) => {
+                    const sc = STATUS_CFG[order.status];
                     return (
                       <div className="o-card" key={order.id}>
-                        <div className="o-top">
+                        <div className="o-top" style={{ background: "var(--bg2)" }}>
                           <div>
                             <div className="o-id">#{order.id.slice(-6).toUpperCase()}</div>
-                            <div className="o-from">🏪 {order.bakery}</div>
                             <div className="o-time">{fmtDate(order.timestamp)}</div>
                           </div>
                           <span className="s-badge" style={{ background: sc.bg, color: sc.color }}>
                             {sc.icon} {sc.label}
                           </span>
                         </div>
-                        <div className="o-items">
+                        <div className="o-items" style={{ paddingTop: 12 }}>
                           {order.items.map((item, i) => (
                             <div className="o-line" key={i} style={{ alignItems: "center", gap: 8 }}>
                               {item.image ? <img src={item.image} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} alt="" loading="lazy" /> : null}
@@ -808,79 +1183,403 @@ export default function App() {
                         {order.note && (
                           <div className="o-note"><div className="o-note-t">📝 {order.note}</div></div>
                         )}
-                        <div className="o-acts">
-                          <button className="btn-s btn-o" onClick={() => setPrintOrder(order)}>🖨️ Print</button>
-                          <button className="btn-s" style={{ background: "#25D366", color: "#fff", borderColor: "#25D366" }} onClick={() => shareWhatsApp(order)}>📱 WA</button>
-                          <div style={{ flex: 1 }}></div>
-                          {prev && (
-                            <button className="btn-s" style={{ background: "var(--bg2)", color: "var(--text3)" }}
-                              onClick={() => updateStatus(order.id, prev)}>← {STATUS_CFG[prev].label}</button>
-                          )}
-                          {next && (
-                            <button className="btn-s" style={{ background: STATUS_CFG[next].color, color: "#fff" }}
-                              onClick={() => updateStatus(order.id, next)}>{STATUS_CFG[next].icon} Mark {STATUS_CFG[next].label}</button>
-                          )}
+                        <div className="o-acts" style={{ justifyContent: "flex-start" }}>
+                           {order.status === "pending" && (
+                             <button className="btn-s btn-d" onClick={() => cancelOrder(order.id)}>🗑 Cancel Order</button>
+                           )}
+                           {order.status === "delivered" ? (
+                             <>
+                               <span style={{ fontSize: 13, color: "#10B981", fontWeight: 600 }}>✅ Delivered</span>
+                               <button className="btn-s btn-o" style={{ marginLeft: "auto" }} onClick={() => setPrintOrder(order)}>🖨️ Print Invoice</button>
+                             </>
+                           ) : order.status !== "pending" && (
+                             <span style={{ fontSize: 13, color: "var(--text3)", fontStyle: "italic" }}>Waiting for Factory/Driver...</span>
+                           )}
                         </div>
                       </div>
                     );
                   })
                 )}
               </div>
-            </>
-          ) : (
-            <>
-              <div className="cats" style={{ marginTop: 8 }}>
-                {CATEGORIES.map((c) => (
-                  <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`} onClick={() => setActiveCat(c.id)}>
-                    {c.icon} {c.name} ({(products[c.id] || []).length})
-                  </button>
-                ))}
-              </div>
-              <div className="pm">
-                <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 10 }}>
-                  Manage <strong>{CATEGORIES.find(c => c.id === activeCat)?.name}</strong> products — changes sync to all bakeries
-                </div>
-                {(products[activeCat] || []).map((p) => (
-                  <div className="pm-item" key={p.id}>
-                    {p.image ? <img src={p.image} className="pm-img" alt="" loading="lazy" /> : <div className="pm-img">🍞</div>}
-                    <span>{p.name}</span>
-                    <span className="pm-meta">{p.unit} · step {p.unit === "g" || p.unit === "ml" ? p.step + p.unit : p.unit === "kg" && p.step < 1 ? (p.step * 1000) + "g" : p.step + " " + p.unit}</span>
-                    <button className="btn-s btn-d" onClick={() => removeProduct(activeCat, p.id)}>✕</button>
-                  </div>
-                ))}
-                <QuickAddForm catId={activeCat} onAdd={(prod) => { addProduct(activeCat, prod); showToast(`${prod.name} added!`); }} />
-
-                <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: 16, marginTop: 24 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>⚠️ Reset All Data</div>
-                  <p style={{ fontSize: 11, color: "var(--text3)", marginBottom: 10 }}>Deletes all orders and restores defaults.</p>
-                  <button className="btn-s btn-d" style={{ padding: "8px 16px" }} onClick={async () => {
-                    if (confirm("Reset everything?")) {
-                      setOrders([]); setProducts(DEFAULT_PRODUCTS); setCart({});
-                      await sSet("bf-orders", []); await sSet("bf-products", DEFAULT_PRODUCTS);
-                      showToast("All data reset");
-                    }
-                  }}>Reset Everything</button>
-                </div>
-              </div>
-            </>
-          )}
-
-          {toast && <div className="toast">✅ {toast}</div>}
+            </div>
+          </div>
         </div>
       </>
     );
   }
+
+  /* ── DRIVER ── */
+  if (screen === "driver") {
+    const dispatching = orders.filter(o => o.status === "dispatching");
+
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="app">
+          <div className="hdr app-hdr">
+            <div className="hdr-row">
+              <div>
+                <h1>🚚 BakeryFlow</h1>
+                <div className="hdr-sub">Driver Dispatch</div>
+              </div>
+              {userRole === "admin" ? (
+                <button className="hdr-btn" style={{ background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" }} onClick={() => navigate("admin")}>👑 Admin</button>
+              ) : (
+                <button className="hdr-btn" onClick={logout}>🚪 Logout</button>
+              )}
+            </div>
+          </div>
+          <div className="layout-grid">
+            <div className="layout-main" style={{ marginTop: 2 }}>
+              <div className="orders" style={{ padding: "0 10px 130px" }}>
+                {dispatching.length === 0 ? (
+                  <div className="empty"><div className="ic">📭</div><p>No orders currently out for delivery</p></div>
+                ) : (
+                  dispatching.map(order => (
+                    <div className="o-card" key={order.id}>
+                      <div className="o-top" style={{ background: "#EDE9FE" }}>
+                        <div>
+                          <div className="o-id">#{order.id.slice(-6).toUpperCase()}</div>
+                          <div className="o-from">To: 🏪 {order.bakery}</div>
+                          <div className="o-time">{fmtDate(order.timestamp)}</div>
+                        </div>
+                        <span className="s-badge" style={{ background: "#8B5CF6", color: "#fff" }}>
+                          🚚 Dispatching
+                        </span>
+                      </div>
+                      <div className="o-items" style={{ paddingTop: 12 }}>
+                        {order.items.map((item, i) => (
+                          <div className="o-line" key={i} style={{ alignItems: "center", gap: 8 }}>
+                            {item.image ? <img src={item.image} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} alt="" loading="lazy" /> : null}
+                            <span style={{ flex: 1 }}>{item.name}</span>
+                            <span style={{ fontWeight: 600 }}>{fmtQty(item.qty, item.unit)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {order.note && (
+                        <div className="o-note"><div className="o-note-t">📝 {order.note}</div></div>
+                      )}
+                      <div className="o-acts">
+                         <button className="btn" style={{ background: "#10B981", borderRadius: "10px", width: "100%" }} onClick={() => updateStatus(order.id, "delivered")}>
+                           ✅ Mark as Delivered
+                         </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  /* ── FACTORY ── */
+  if (screen === "factory") {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className={`app ${printOrder ? "print-active" : ""}`}>
+          <div className="hdr">
+            <div className="hdr-row">
+              <div>
+                <h1>🏭 BakeryFlow</h1>
+                <div className="hdr-sub">Factory Dispatch</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {userRole === "admin" && <button className="hdr-btn" style={{ background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" }} onClick={() => navigate("admin")}>👑 Admin</button>}
+                {!showPM && <button className="hdr-btn" onClick={() => setShowSummary(true)}>📊 Today</button>}
+                <button className="hdr-btn" onClick={() => setShowPM(!showPM)}>
+                  {showPM ? "📋 Orders" : "⚙️ Products"}
+                </button>
+                <button className="hdr-btn" onClick={logout}>🚪 Logout</button>
+              </div>
+            </div>
+          </div>
+
+          {showSummary && (
+            <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowSummary(false)}>
+              <div className="modal">
+                <div className="m-hdr">
+                  <h2>📊 Today's Summary</h2>
+                  <button className="m-close" onClick={() => setShowSummary(false)}>✕</button>
+                </div>
+                <div className="m-body">
+                  <div style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12 }}>Total quantities ordered today across all bakeries.</div>
+                  {getDailySummary().length === 0 ? (
+                    <div className="empty"><div className="ic">🤷</div><p>No orders today</p></div>
+                  ) : (
+                    <>
+                      <div style={{ height: 200, marginBottom: 24 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={getDailySummary().slice(0, 5)} layout="vertical" margin={{ top: 0, right: 0, bottom: 0, left: 24 }}>
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }} />
+                            <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: 8, border: 'none', boxShadow: 'var(--shadow)', fontSize: 12, fontWeight: 600, color: 'var(--text)' }} itemStyle={{ color: 'var(--accent)' }}/>
+                            <Bar dataKey="qty" fill="var(--accent)" radius={[0, 4, 4, 0]} barSize={24} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, margin: "20px 0 10px" }}>All Items</div>
+                      {getDailySummary().map((item, idx) => (
+                        <div key={idx} className="c-item" style={{ padding: "10px 0" }}>
+                          {item.image ? <img src={item.image} style={{ width: 28, height: 28, borderRadius: 6, objectFit: "cover", marginRight: 10 }} alt="" loading="lazy" /> : <div className="pm-img" style={{ width: 28, height: 28, fontSize: 14, marginRight: 10 }}>🍞</div>}
+                          <span className="c-item-info c-item-name">{item.name}</span>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--accent)" }}>{fmtQty(item.qty, item.unit)}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="layout-grid">
+            <div className="layout-sidebar">
+              {!showPM ? (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>STATUS FILTER</div>
+                  <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
+                    <button className={`chip ${statusFilter === "all" ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === "all" ? "var(--bg2)" : "transparent", color: statusFilter === "all" ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter("all")}>All ({orders.length})</button>
+                    {STATUS_FLOW.map((s) => (
+                      <button key={s} className={`chip ${statusFilter === s ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: statusFilter === s ? "var(--bg2)" : "transparent", color: statusFilter === s ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setStatusFilter(s)}>
+                        <span style={{ marginRight: 8 }}>{STATUS_CFG[s].icon}</span> {STATUS_CFG[s].label} ({statusCounts[s]})
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text3)", marginBottom: 16, paddingLeft: 8 }}>CATEGORIES</div>
+                  <div className="cats" style={{ flexDirection: "column", gap: 4, alignItems: "stretch", overflow: "visible" }}>
+                    {dbCategories.map((c) => (
+                      <button key={c.id} className={`chip ${activeCat === c.id ? "on" : ""}`} style={{ textAlign: "left", padding: "10px 14px", border: "none", background: activeCat === c.id ? "var(--bg2)" : "transparent", color: activeCat === c.id ? "var(--accent)" : "var(--text)", borderRadius: 12 }} onClick={() => setActiveCat(c.id)}>
+                        <span style={{ marginRight: 8 }}>{c.icon}</span> {c.name} ({(products[c.id] || []).length})
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="layout-main">
+              {!showPM ? (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 16 }}>
+                    <div className="o-card" style={{ padding: 16 }}>
+                      <h3 style={{ fontSize: 14, marginBottom: 8, color: "var(--text)" }}>Order Status Distribution</h3>
+                      <div style={{ height: 160, display: "flex", alignItems: "center" }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={STATUS_FLOW.map(s => ({ name: STATUS_CFG[s].label, value: orders.filter(o => o.status === s).length, color: STATUS_CFG[s].color }))}
+                              cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={2} dataKey="value" stroke="none"
+                            >
+                              {STATUS_FLOW.map((s, index) => (
+                                <Cell key={`cell-${index}`} fill={STATUS_CFG[s].color} />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: 'var(--shadow)', fontSize: 12 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div style={{ flex: 1, fontSize: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                          {STATUS_FLOW.map(s => {
+                            const count = orders.filter(o => o.status === s).length;
+                            return count > 0 ? (
+                              <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <div style={{ width: 8, height: 8, borderRadius: 4, background: STATUS_CFG[s].color }}></div>
+                                <span style={{ color: "var(--text3)", flex: 1 }}>{STATUS_CFG[s].label}</span>
+                                <span style={{ fontWeight: 600 }}>{count}</span>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {uniqueBakeries.length > 1 && (
+                    <div className="bk-filter" style={{ marginBottom: 16 }}>
+                      <button className={`bk-chip ${bakeryFilter === "all" ? "on" : ""}`} onClick={() => setBakeryFilter("all")}>All Bakeries</button>
+                      {uniqueBakeries.map((b) => (
+                        <button key={b} className={`bk-chip ${bakeryFilter === b ? "on" : ""}`} onClick={() => setBakeryFilter(b)}>🏪 {b}</button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="orders" style={{ padding: "0 0 130px" }}>
+                    {filteredOrders.length === 0 ? (
+                      <div className="empty"><div className="ic">📭</div><p>No {statusFilter !== "all" ? statusFilter : ""} orders</p></div>
+                    ) : (
+                      filteredOrders.map((order) => {
+                        const sc = STATUS_CFG[order.status];
+                        const si = STATUS_FLOW.indexOf(order.status);
+                        const next = si + 1 < STATUS_FLOW.length ? STATUS_FLOW[si + 1] : null;
+                        const prev = si - 1 >= 0 ? STATUS_FLOW[si - 1] : null;
+
+                        return (
+                          <div className="o-card" key={order.id}>
+                            <div className="o-top">
+                              <div>
+                                <div className="o-id">#{order.id.slice(-6).toUpperCase()}</div>
+                                <div className="o-from">🏪 {order.bakery}</div>
+                                <div className="o-time">{fmtDate(order.timestamp)}</div>
+                              </div>
+                              <span className="s-badge" style={{ background: sc.bg, color: sc.color }}>
+                                {sc.icon} {sc.label}
+                              </span>
+                            </div>
+                            <div className="o-items">
+                              {order.items.map((item, i) => (
+                                <div className="o-line" key={i} style={{ alignItems: "center", gap: 8 }}>
+                                  {item.image ? <img src={item.image} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} alt="" loading="lazy" /> : null}
+                                  <span style={{ flex: 1 }}>{item.name}</span>
+                                  <span style={{ fontWeight: 600 }}>{fmtQty(item.qty, item.unit)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {order.note && (
+                              <div className="o-note"><div className="o-note-t">📝 {order.note}</div></div>
+                            )}
+                            <div className="o-acts">
+                              <button className="btn-s btn-o" onClick={() => setPrintOrder(order)}>🖨️ Print</button>
+                              <button className="btn-s" style={{ background: "#25D366", color: "#fff", borderColor: "#25D366" }} onClick={() => shareWhatsApp(order)}>📱 WA</button>
+                              <div style={{ flex: 1 }}></div>
+                              {prev && prev !== "delivered" && (
+                                <button className="btn-s" style={{ background: "var(--bg2)", color: "var(--text3)" }}
+                                  onClick={() => updateStatus(order.id, prev)}>← {STATUS_CFG[prev].label}</button>
+                              )}
+                              {next && next !== "delivered" && (
+                                <button className="btn-s" style={{ background: STATUS_CFG[next].color, color: "#fff" }}
+                                  onClick={() => updateStatus(order.id, next)}>{STATUS_CFG[next].icon} Mark {STATUS_CFG[next].label}</button>
+                              )}
+                              {next === "delivered" && order.status === "dispatching" && (
+                                <span style={{ fontSize: 12, color: "var(--text3)", fontStyle: "italic", alignSelf: "center", marginLeft: 6 }}>
+                                  Waiting on Bakery to Confirm Receipt...
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="pm" style={{ padding: "0 0 130px" }}>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, background: "var(--card)", padding: 16, borderRadius: "var(--r)", border: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: 13, color: "var(--text3)" }}>
+                      Manage <strong>{dbCategories.find(c => c.id === activeCat)?.name}</strong> products (Global scope)
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                       <button className="btn-o" style={{ width: "auto", padding: "8px 16px" }} onClick={() => setShowCatMan(true)}>
+                         ⚙️ Categories
+                       </button>
+                       <button className="btn" style={{ width: "auto", padding: "8px 16px" }} onClick={() => setShowQuickAdd(true)}>
+                         + Add Item
+                       </button>
+                    </div>
+                  </div>
+
+                  {(products[activeCat] || []).map((p) => (
+                    <div className="pm-item" key={p.id}>
+                      {p.image ? <img src={p.image} className="pm-img" alt="" loading="lazy" /> : <div className="pm-img">🍞</div>}
+                      <span style={{ textDecoration: p.is_available === false ? "line-through" : "none", opacity: p.is_available === false ? 0.5 : 1 }}>{p.name}</span>
+                      <span className="pm-meta">{p.unit} · step {p.unit === "g" || p.unit === "ml" ? p.step + p.unit : p.unit === "kg" && p.step < 1 ? (p.step * 1000) + "g" : p.step + " " + p.unit}</span>
+                      <button className="btn-s" style={{ marginLeft: "auto", background: p.is_available === false ? "#FCA5A5" : "#D1FAE5", color: p.is_available === false ? "#991B1B" : "#065F46", border: "none" }} onClick={() => toggleAvailability(activeCat, p.id)}>
+                        {p.is_available === false ? "❌ Sold Out" : "✅ Available"}
+                      </button>
+                      <button className="btn-s btn-o" onClick={() => setEditProduct({ ...p, catId: activeCat })}>✏️</button>
+                      <button className="btn-s btn-d" onClick={() => removeProduct(activeCat, p.id)}>🗑</button>
+                    </div>
+                  ))}
+
+                  {showQuickAdd && (
+                    <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowQuickAdd(false)}>
+                      <div className="modal">
+                        <div className="m-hdr">
+                          <h2>Add Custom Item to {dbCategories.find(c => c.id === activeCat)?.name}</h2>
+                          <button className="m-close" onClick={() => setShowQuickAdd(false)}>✕</button>
+                        </div>
+                        <div className="m-body">
+                          <ProductForm 
+                             onSubmit={(prod) => { addProduct(activeCat, prod); setShowQuickAdd(false); showToast(`${prod.name} added!`); }} 
+                             submitLabel="+ Add"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {editProduct && (
+                    <div className="overlay" onClick={(e) => e.target === e.currentTarget && setEditProduct(null)}>
+                      <div className="modal">
+                        <div className="m-hdr">
+                          <h2>Edit {editProduct.name}</h2>
+                          <button className="m-close" onClick={() => setEditProduct(null)}>✕</button>
+                        </div>
+                        <div className="m-body">
+                          <ProductForm 
+                             initialData={editProduct}
+                             onSubmit={(prod) => { updateProductDetails(editProduct.catId, editProduct.id, prod); setEditProduct(null); showToast(`${prod.name} updated!`); }} 
+                             submitLabel="Save Changes"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {showCatMan && (
+                    <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowCatMan(false)}>
+                      <div className="modal">
+                        <div className="m-hdr">
+                          <h2>Manage Categories</h2>
+                          <button className="m-close" onClick={() => setShowCatMan(false)}>✕</button>
+                        </div>
+                        <div className="m-body">
+                          <CategoryManager
+                             categories={dbCategories}
+                             onUpdate={async (cats) => {
+                               setDbCategories(cats);
+                               setShowCatMan(false);
+                               showToast("Categories updated!");
+                               // Ensure products maps the new categories, creating empty arrays if needed
+                               setProducts(prev => {
+                                 const next = { ...prev };
+                                 cats.forEach(c => { if (!next[c.id]) next[c.id] = []; });
+                                 return next;
+                               });
+                             }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>{/* layout-main */}
+          </div>{/* layout-grid */}
+        </div>
+      </>
+    );
+  }
+  if (screen === 'bakery-orders') {
+    // Legacy fallback, we handle 'bakery-orders' directly above now. This block can be removed.
+  }
+
   return null;
 }
 
 /* ═══════════════════════════════════════════
-   QUICK ADD FORM (used by both bakery + factory)
+   PRODUCT REUSABLE FORM (Add / Edit)
    ═══════════════════════════════════════════ */
-function QuickAddForm({ catId, onAdd }) {
-  const [name, setName] = useState("");
-  const [unit, setUnit] = useState("kg");
-  const [step, setStep] = useState("0.25");
-  const [image, setImage] = useState("");
+function ProductForm({ initialData, onSubmit, submitLabel }) {
+  const [name, setName] = useState(initialData?.name || "");
+  const [unit, setUnit] = useState(initialData?.unit || "kg");
+  const [step, setStep] = useState(initialData?.step ? String(initialData.step) : "0.25");
+  const [file, setFile] = useState(null);
 
   const stepOpts = {
     kg: ["0.1", "0.25", "0.5", "1"],
@@ -900,26 +1599,181 @@ function QuickAddForm({ catId, onAdd }) {
     setStep((stepOpts[u] || ["1"])[0]);
   }
 
-  function handleAdd() {
+  async function handleSubmit() {
     if (!name.trim()) return;
-    onAdd({ id: uid(), name: name.trim(), unit, step: parseFloat(step), image: image.trim() });
-    setName("");
-    setImage("");
+    let imgUrl = initialData?.image || "";
+
+    if (file) {
+      // Create unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${uid()}.${fileExt}`;
+      const filePath = `products/${fileName}`;
+
+      // Upload to Supabase Storage Bucket
+      const { error: uploadError } = await supabase.storage
+        .from('product-images')
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error("Upload Error:", uploadError);
+        alert("Failed to upload image. " + uploadError.message);
+      } else {
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('product-images')
+          .getPublicUrl(filePath);
+        imgUrl = publicUrl;
+      }
+    }
+
+    onSubmit({ id: initialData?.id || uid(), name: name.trim(), unit, step: parseFloat(step), image: imgUrl });
+    if (!initialData) {
+      setName("");
+      setFile(null);
+    }
   }
 
   return (
     <div className="pm-add">
       <input placeholder="Item name" value={name} onChange={(e) => setName(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleAdd()} style={{ flex: "2 1 100px" }} />
-      <input placeholder="Image URL (optional)" value={image} onChange={(e) => setImage(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleAdd()} style={{ flex: "2 1 100px" }} />
+        onKeyDown={(e) => e.key === "Enter" && handleSubmit()} style={{ flex: "2 1 100px" }} />
+      <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files[0])}
+        style={{ flex: "2 1 100px", padding: "6px" }} title={initialData?.image ? "Upload new image" : "Upload image"}/>
       <select value={unit} onChange={(e) => onUnitChange(e.target.value)} style={{ flex: "1 1 60px" }}>
         {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
       </select>
       <select value={step} onChange={(e) => setStep(e.target.value)} style={{ flex: "1 1 70px" }}>
         {(stepOpts[unit] || ["1"]).map((s) => <option key={s} value={s}>step {s}</option>)}
       </select>
-      <button className="btn" style={{ flex: "0 0 auto", width: "auto", padding: "9px 18px" }} onClick={handleAdd}>+ Add</button>
+      <button className="btn" style={{ flex: "0 0 auto", width: "auto", padding: "9px 18px" }} onClick={handleSubmit}>{submitLabel || "Save"}</button>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   CATEGORY MANAGER (Admin feature)
+   ═══════════════════════════════════════════ */
+function CategoryManager({ categories, onUpdate }) {
+  const [cats, setCats] = useState(categories);
+  const [newIcon, setNewIcon] = useState("📦");
+  const [newName, setNewName] = useState("");
+
+  async function handleAdd() {
+    if (!newName.trim()) return;
+    const cid = newName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (cats.find(c => c.id === cid)) return alert("Category already exists!");
+    
+    const newCat = { id: cid, name: newName.trim(), icon: newIcon };
+    const updated = [...cats, newCat];
+    
+    // Optimistic
+    setCats(updated);
+    setNewName("");
+    setNewIcon("📦");
+
+    // Supabase
+    await supabase.from('categories').insert([{ id: newCat.id, name: newCat.name, icon: newCat.icon }]);
+  }
+
+  async function handleDelete(id) {
+    if (id === 'other') return alert("Cannot delete 'Other'");
+    const updated = cats.filter(c => c.id !== id);
+    setCats(updated);
+    await supabase.from('categories').delete().eq('id', id);
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+        {cats.map(c => (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--bg)", padding: 12, borderRadius: 8, border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: 24 }}>{c.icon}</span>
+            <span style={{ flex: 1, fontWeight: 600 }}>{c.name}</span>
+            {c.id !== 'other' && (
+               <button className="btn-s btn-d" onClick={() => handleDelete(c.id)}>🗑</button>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", background: "var(--card)", padding: 16, borderRadius: 8, border: "1px solid var(--border)" }}>
+        <input value={newIcon} onChange={e => setNewIcon(e.target.value)} style={{ width: 60, fontSize: 18, textAlign: "center" }} placeholder="Icon" />
+        <input value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1 }} placeholder="New Category Name..." onKeyDown={(e) => e.key === "Enter" && handleAdd()} />
+        <button className="btn" style={{ width: "auto", padding: "10px 16px" }} onClick={handleAdd}>Add</button>
+      </div>
+      <div style={{ marginTop: 20, textAlign: "right" }}>
+        <button className="btn" style={{ width: "auto" }} onClick={() => onUpdate(cats)}>Save & Close</button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   AUTH SCREEN COMPONENT
+   ═══════════════════════════════════════════ */
+function AuthScreen({ showToast }) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [signUpRole, setSignUpRole] = useState("bakery");
+  const [signUpName, setSignUpName] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  async function handleAuth() {
+    setAuthLoading(true);
+    if (isSignUp) {
+      const { data, error } = await supabase.auth.signUp({
+        email, password, options: { data: { role: signUpRole, name: signUpRole === "bakery" ? signUpName : signUpRole } }
+      });
+      if (error) showToast(error.message);
+      else showToast("Account created! You are now logged in.");
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) showToast(error.message);
+      else showToast("Welcome back!");
+    }
+    setAuthLoading(false);
+  }
+
+  return (
+    <div className="login">
+      <div className="login-logo">🍞</div>
+      <h2>BakeryFlow</h2>
+      <p>Secure Dispatch & Tracking</p>
+
+      <div className="login-card">
+        <div style={{ display: "flex", gap: 8, marginBottom: 24, background: "var(--bg)", padding: 4, borderRadius: 12 }}>
+          <button className={`chip ${!isSignUp ? "on" : ""}`} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", fontSize: 13 }} onClick={() => setIsSignUp(false)}>Login</button>
+          <button className={`chip ${isSignUp ? "on" : ""}`} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", fontSize: 13 }} onClick={() => setIsSignUp(true)}>Sign Up</button>
+        </div>
+
+        <h3 style={{ textAlign: "center", marginBottom: 16 }}>{isSignUp ? "Create new account" : "Sign in to your account"}</h3>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <input className="login-input" type="email" placeholder="Email Address" 
+            value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="login-input" type="password" placeholder="Password" 
+            value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAuth()} />
+
+          {isSignUp && (
+            <>
+              <select className="login-input" value={signUpRole} onChange={(e) => setSignUpRole(e.target.value)} style={{ padding: "12px 16px" }}>
+                <option value="bakery">Bakery (Customer)</option>
+                <option value="factory">Factory Staff</option>
+                <option value="driver">Delivery Driver</option>
+                <option value="admin">Owner / Admin</option>
+              </select>
+              {signUpRole === "bakery" && (
+                <input className="login-input" placeholder="Bakery Name (e.g. Khan Bakery)" 
+                  value={signUpName} onChange={(e) => setSignUpName(e.target.value)} />
+              )}
+            </>
+          )}
+
+          <button className="btn" onClick={handleAuth} disabled={authLoading || !email || !password || (isSignUp && signUpRole === "bakery" && !signUpName)}>
+            {authLoading ? "Please wait..." : (isSignUp ? "Create Account" : "Login  →")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
