@@ -896,10 +896,10 @@ export default function App() {
   function shareWhatsApp(order) {
     let text = `📦 *Order #${order.id.slice(-6).toUpperCase()}*\n`;
     text += `🏪 Bakery: ${order.bakery}\n`;
-    text += `📊 Status: ${STATUS_CFG[order.status].label}\n`;
+    text += `📊 Status: ${(STATUS_CFG[order.status] || {}).label || order.status}\n`;
     text += `⏰ ${fmtDate(order.timestamp)}\n\n`;
     text += `*Items:*\n`;
-    order.items.forEach(i => {
+    (order.items || []).forEach(i => {
       text += `• ${i.name} - ${fmtQty(i.qty, i.unit)}\n`;
     });
     if (order.note) text += `\n📝 Note: ${order.note}`;
@@ -1151,7 +1151,7 @@ export default function App() {
             {adminTab === "orders" && (
               <div style={{ marginBottom: 20 }}>
                 {orders.slice(0, 20).map(order => {
-                  const sc = STATUS_CFG[order.status];
+                  const sc = STATUS_CFG[order.status] || { bg: "#e5e7eb", color: "#4b5563", icon: "❓", label: order.status || "Unknown" };
                   return (
                     <div key={order.id} className="o-card" style={{ marginBottom: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1159,7 +1159,7 @@ export default function App() {
                           <span style={{ fontWeight: 700, fontSize: 13 }}>#{order.id.slice(-6).toUpperCase()}</span>
                           <span className="s-badge" style={{ background: sc.bg, color: sc.color }}>{sc.icon} {sc.label}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{order.bakery} · {order.items.length} items · {fmtDate(order.timestamp)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{order.bakery} · {(order.items || []).length} items · {fmtDate(order.timestamp)}</div>
                       </div>
                       <div style={{ display: "flex", gap: 4 }}>
                         <button className="btn-o" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setPrintOrder(order)}>🖨️</button>
@@ -1443,7 +1443,7 @@ export default function App() {
                   <div className="empty"><div className="ic">📭</div><p>No {statusFilter !== "all" ? statusFilter : ""} orders yet</p></div>
                 ) : (
                   myOrders.filter(o => statusFilter === "all" || o.status === statusFilter).map((order) => {
-                    const sc = STATUS_CFG[order.status];
+                    const sc = STATUS_CFG[order.status] || { bg: "#e5e7eb", color: "#4b5563", icon: "❓", label: order.status || "Unknown" };
                     return (
                       <div className="o-card" key={order.id}>
                         <div className="o-top" style={{ background: "var(--bg2)" }}>
@@ -1456,7 +1456,7 @@ export default function App() {
                           </span>
                         </div>
                         <div className="o-items" style={{ paddingTop: 12 }}>
-                          {order.items.map((item, i) => (
+                          {(order.items || []).map((item, i) => (
                             <div className="o-line" key={i} style={{ alignItems: "center", gap: 8 }}>
                               {item.image ? <img src={item.image} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} alt="" loading="lazy" /> : null}
                               <span style={{ flex: 1 }}>{item.name}</span>
@@ -1532,7 +1532,7 @@ export default function App() {
                         </span>
                       </div>
                       <div className="o-items" style={{ paddingTop: 12 }}>
-                        {order.items.map((item, i) => (
+                        {(order.items || []).map((item, i) => (
                           <div className="o-line" key={i} style={{ alignItems: "center", gap: 8 }}>
                             {item.image ? <img src={item.image} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} alt="" loading="lazy" /> : null}
                             <span style={{ flex: 1 }}>{item.name}</span>
@@ -1698,7 +1698,7 @@ export default function App() {
                       <div className="empty"><div className="ic">📭</div><p>No {statusFilter !== "all" ? statusFilter : ""} orders</p></div>
                     ) : (
                       filteredOrders.map((order) => {
-                        const sc = STATUS_CFG[order.status];
+                        const sc = STATUS_CFG[order.status] || { bg: "#e5e7eb", color: "#4b5563", icon: "❓", label: order.status || "Unknown" };
                         const si = STATUS_FLOW.indexOf(order.status);
                         const next = si + 1 < STATUS_FLOW.length ? STATUS_FLOW[si + 1] : null;
                         const prev = si - 1 >= 0 ? STATUS_FLOW[si - 1] : null;
@@ -1716,7 +1716,7 @@ export default function App() {
                               </span>
                             </div>
                             <div className="o-items">
-                              {order.items.map((item, i) => (
+                              {(order.items || []).map((item, i) => (
                                 <div className="o-line" key={i} style={{ alignItems: "center", gap: 8 }}>
                                   {item.image ? <img src={item.image} style={{ width: 24, height: 24, borderRadius: 4, objectFit: "cover" }} alt="" loading="lazy" /> : null}
                                   <span style={{ flex: 1 }}>{item.name}</span>
