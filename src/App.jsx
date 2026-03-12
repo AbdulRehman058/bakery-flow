@@ -22,6 +22,29 @@ const INITIAL_CATEGORIES = [
 
 const UNITS = ["kg", "g", "ltr", "ml", "pcs", "dozen", "pkt", "box", "tray", "plate"];
 
+const BAKERY_NAMES = [
+  "Khan Bakery",
+  "Malik Sweets",
+  "Al-Madina Bakery",
+  "City Bakery",
+  "Royal Sweets",
+  "New Karachi Bakery",
+  "Fresho Bakery",
+  "Taj Mahal Sweets",
+  "Gulshan Bakery",
+  "Star Bakery",
+  "United Bakery",
+  "Bismillah Sweets",
+];
+
+const DEMO_ACCOUNTS = [
+  { email: "admin@bakeryflow.com", password: "admin123", role: "admin", label: "👑 Admin" },
+  { email: "factory@bakeryflow.com", password: "factory123", role: "factory", label: "🏭 Factory" },
+  { email: "driver@bakeryflow.com", password: "driver123", role: "driver", label: "🚚 Driver" },
+  { email: "khan@bakeryflow.com", password: "bakery123", role: "bakery", label: "🏪 Khan Bakery" },
+  { email: "malik@bakeryflow.com", password: "bakery123", role: "bakery", label: "🏪 Malik Sweets" },
+];
+
 const DEFAULT_PRODUCTS = {
   mithai: [
     { id: "m1", name: "Gulab Jamun", unit: "kg", step: 0.25 },
@@ -1773,14 +1796,16 @@ function AuthScreen({ showToast }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signUpRole, setSignUpRole] = useState("bakery");
-  const [signUpName, setSignUpName] = useState("");
+  const [signUpBakery, setSignUpBakery] = useState(BAKERY_NAMES[0]);
   const [authLoading, setAuthLoading] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
 
   async function handleAuth() {
     setAuthLoading(true);
     if (isSignUp) {
+      const name = signUpRole === "bakery" ? signUpBakery : signUpRole;
       const { data, error } = await supabase.auth.signUp({
-        email, password, options: { data: { role: signUpRole, name: signUpRole === "bakery" ? signUpName : signUpRole } }
+        email, password, options: { data: { role: signUpRole, name } }
       });
       if (error) showToast(error.message);
       else showToast("Account created! You are now logged in.");
@@ -1790,6 +1815,12 @@ function AuthScreen({ showToast }) {
       else showToast("Welcome back!");
     }
     setAuthLoading(false);
+  }
+
+  function loginDemo(acc) {
+    setEmail(acc.email);
+    setPassword(acc.password);
+    setIsSignUp(false);
   }
 
   return (
@@ -1821,16 +1852,38 @@ function AuthScreen({ showToast }) {
                 <option value="admin">Owner / Admin</option>
               </select>
               {signUpRole === "bakery" && (
-                <input className="login-input" placeholder="Bakery Name (e.g. Khan Bakery)" 
-                  value={signUpName} onChange={(e) => setSignUpName(e.target.value)} />
+                <select className="login-input" value={signUpBakery} onChange={(e) => setSignUpBakery(e.target.value)} style={{ padding: "12px 16px" }}>
+                  {BAKERY_NAMES.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
               )}
             </>
           )}
 
-          <button className="btn" onClick={handleAuth} disabled={authLoading || !email || !password || (isSignUp && signUpRole === "bakery" && !signUpName)}>
+          <button className="btn" onClick={handleAuth} disabled={authLoading || !email || !password}>
             {authLoading ? "Please wait..." : (isSignUp ? "Create Account" : "Login  →")}
           </button>
         </div>
+      </div>
+
+      {/* Demo Accounts */}
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <button onClick={() => setShowDemo(!showDemo)} style={{ background: "none", border: "none", color: "var(--text3)", fontSize: 12, cursor: "pointer", padding: "8px 0", width: "100%", textAlign: "center", fontWeight: 600 }}>
+          {showDemo ? "▲ Hide Demo Accounts" : "▼ Demo Accounts (for testing)"}
+        </button>
+        {showDemo && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+            {DEMO_ACCOUNTS.map(acc => (
+              <button key={acc.email} className="btn-o" style={{ width: "100%", padding: "10px 14px", fontSize: 12, textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                onClick={() => loginDemo(acc)}>
+                <span>{acc.label}</span>
+                <span style={{ fontSize: 10, color: "var(--text3)" }}>{acc.email}</span>
+              </button>
+            ))}
+            <div style={{ fontSize: 10, color: "var(--text3)", textAlign: "center", marginTop: 4 }}>
+              Click any account above, then press "Login →"
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
