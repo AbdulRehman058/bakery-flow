@@ -436,6 +436,7 @@ export default function App() {
   const [editProduct, setEditProduct] = useState(null);
 
   const [statusFilter, setStatusFilter] = useState("pending");
+  const [adminTab, setAdminTab] = useState("overview");
   const [bakeryFilter, setBakeryFilter] = useState("all");
   const [showPM, setShowPM] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -885,7 +886,7 @@ export default function App() {
     const totalItems = orders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.qty, 0), 0);
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
-    const [adminTab, setAdminTab] = useState("overview");
+
 
     // Bakery performance data
     const bakeryPerf = [...new Set(orders.map(o => o.bakery))].map(b => {
