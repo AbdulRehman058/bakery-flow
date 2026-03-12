@@ -870,15 +870,20 @@ export default function App() {
 
     // 1. Update in Supabase
     const { error } = await supabase.from('orders').update(updatePayload).eq('id', oid);
-    if (!error) {
-      setOrders(orders.map((o) => o.id === oid ? { ...o, status: ns, [timestampFieldMap[ns]]: new Date(exactIso).getTime() } : o));
-
-      const targetOrder = orders.find(o => o.id === oid);
-      await supabase.from('logs').insert([{
-        action: 'STATUS_UPDATED',
-        details: `Order for ${targetOrder?.bakery || 'Unknown'} updated to ${ns}.`
-      }]);
+    
+    if (error) {
+      console.error("Update status error:", error);
+      showToast("Database Error: " + (error.message || "Could not update status."));
+      return;
     }
+
+    setOrders(orders.map((o) => o.id === oid ? { ...o, status: ns, [timestampFieldMap[ns]]: new Date(exactIso).getTime() } : o));
+
+    const targetOrder = orders.find(o => o.id === oid);
+    await supabase.from('logs').insert([{
+      action: 'STATUS_UPDATED',
+      details: `Order for ${targetOrder?.bakery || 'Unknown'} updated to ${ns}.`
+    }]);
   }
 
   async function cancelOrder(oid) {
