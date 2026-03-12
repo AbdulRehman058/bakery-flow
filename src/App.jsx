@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "./supabase";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from "recharts";
+import * as XLSX from "xlsx";
 
 /* ═══════════════════════════════════════════
    CONFIG & DATA
@@ -146,10 +147,10 @@ const DEFAULT_PRODUCTS = {
 
 const STATUS_FLOW = ["pending", "packed", "dispatching", "delivered"];
 const STATUS_CFG = {
-  pending: { label: "Pending", color: "#F59E0B", bg: "#FEF3C7", icon: "⏳" },
-  packed: { label: "Packed", color: "#3B82F6", bg: "#DBEAFE", icon: "📦" },
-  dispatching: { label: "Dispatching", color: "#8B5CF6", bg: "#EDE9FE", icon: "🚚" },
-  delivered: { label: "Delivered", color: "#10B981", bg: "#D1FAE5", icon: "✅" },
+  pending: { label: "Pending", color: "#F59E0B", bg: "#FEF3C7", icon: "⏳", timeField: "timestamp" },
+  packed: { label: "Packed", color: "#3B82F6", bg: "#DBEAFE", icon: "📦", timeField: "packed_at" },
+  dispatching: { label: "Dispatching", color: "#8B5CF6", bg: "#EDE9FE", icon: "🚚", timeField: "dispatched_at" },
+  delivered: { label: "Delivered", color: "#10B981", bg: "#D1FAE5", icon: "✅", timeField: "delivered_at" },
 };
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
@@ -177,7 +178,7 @@ function fmtQty(qty, unit) {
    STYLES
    ═══════════════════════════════════════════ */
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&family=Playfair+Display:wght@600;700&display=swap');
 
 :root {
   --bg:#FAF6F1;--bg2:#F0E9DF;--card:#fff;--text:#1E1208;--text2:#5C4A3A;--text3:#9A8878;
@@ -244,20 +245,40 @@ input,select,textarea,button{font-family:inherit;}
 .search input{width:100%;padding:10px 14px 10px 34px;border:1.5px solid var(--border);border-radius:var(--rs);font-size:13px;outline:none;background:var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239A8878' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 12px center no-repeat;}
 .search input:focus{border-color:var(--accent);}
 
-/* Products */
-.prod-list{padding:2px 16px 130px;display:flex;flex-direction:column;gap:5px;}
-.prod{display:flex;align-items:center;background:var(--card);border-radius:var(--rs);padding:11px 12px;border:1px solid var(--border);transition:all .15s;}
-.prod.has-qty{border-color:var(--accent);background:#FFFBF5;}
-.prod-info{flex:1;min-width:0;}
-.prod-name{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.prod-unit{font-size:11px;color:var(--text3);margin-top:1px;}
-.qty-area{display:flex;align-items:center;gap:6px;}
-.qty-b{width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);background:var(--card);cursor:pointer;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all .12s;color:var(--text);}
+/* Products Grid */
+.prod-list { 
+  padding: 10px 16px 130px; 
+  display: grid; 
+  grid-template-columns: repeat(2, 1fr); 
+  gap: 12px; 
+}
+@media (min-width: 500px) { .prod-list { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 800px) { .prod-list { grid-template-columns: repeat(4, 1fr); } }
+
+.prod {
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-radius: calc(var(--rs) + 4px);
+  padding: 12px;
+  border: 1px solid var(--border);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+  align-items: center;
+  text-align: center;
+}
+.prod:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+.prod.has-qty{border-color:var(--accent);background:#FFFBF5;box-shadow: 0 8px 24px rgba(154,136,120,0.12);}
+.prod-info{width: 100%; margin: 10px 0;}
+.prod-name{font-weight:800;font-size:16px;font-family:'Noto Nastaliq Urdu', 'DM Sans', sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-bottom:2px;}
+.prod-unit{font-size:11px;color:var(--text3);opacity:0.8;font-weight:500;}
+.qty-area{display:flex;align-items:center;justify-content: center;gap:6px;width:100%;}
+.qty-b{width:36px;height:36px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;font-size:20px;font-weight:700;display:flex;align-items:center;justify-content:center;transition:all .15s;color:var(--text);}
 .qty-b:hover{background:var(--accent);color:#fff;border-color:var(--accent);}
-.qty-b:active{transform:scale(.9);}
-.qty-in{width:54px;text-align:center;font-weight:700;font-size:14px;border:1.5px solid var(--border);border-radius:7px;padding:4px 2px;outline:none;}
-.qty-in:focus{border-color:var(--accent);}
-.qty-unit-tag{font-size:10px;color:var(--text3);font-weight:600;min-width:20px;}
+.qty-b:active{transform:scale(.92);}
+.qty-in{width:60px;height:36px;text-align:center;font-weight:700;font-size:16px;border:1.5px solid var(--border);border-radius:10px;padding:2px;outline:none;}
+.qty-in:focus{border-color:var(--accent);box-shadow: 0 0 0 3px rgba(154,136,120,0.15);}
+.qty-unit-tag{font-size:11px;color:var(--text3);font-weight:600;min-width:20px;display:none;}
 
 /* Cart Bar */
 .cart-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;background:var(--accent);color:#fff;padding:13px 18px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;z-index:90;border-radius:18px 18px 0 0;transition:background .2s;}
@@ -356,7 +377,7 @@ input,select,textarea,button{font-family:inherit;}
 .toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:300;background:#065F46;color:#fff;padding:10px 22px;border-radius:11px;font-weight:600;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.2);animation:slideUp .25s ease-out;}
 
 /* Images */
-.prod-img{width:48px;height:48px;border-radius:8px;object-fit:cover;border:1px solid var(--border);margin-right:12px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text3);flex-shrink:0;}
+.prod-img{width:90px;height:90px;border-radius:12px;object-fit:cover;border:1px solid rgba(0,0,0,0.05);background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:32px;color:var(--text3);flex-shrink:0;}
 .pm-img{width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border);margin-right:10px;flex-shrink:0;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--text3);}
 
 /* ═══ RESPONSIVE MOBILE ═══ */
@@ -374,14 +395,15 @@ input,select,textarea,button{font-family:inherit;}
   .login-card { padding: 16px; }
   .login-input { padding: 10px 12px; font-size: 13px; }
 
-  /* Products */
-  .prod-list { padding: 2px 10px 120px; }
-  .prod { padding: 8px 10px; }
-  .prod-img { width: 40px; height: 40px; margin-right: 8px; }
-  .prod-name { font-size: 12.5px; }
+  /* Products Mobile */
+  .prod-list { padding: 8px 10px 120px; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .prod { padding: 12px 8px; }
+  .prod-img { width: 80px; height: 80px; margin: 0 auto 8px; font-size: 28px; }
+  .prod-name { font-size: 15px; margin-bottom: 2px; }
   .prod-unit { font-size: 10px; }
-  .qty-b { width: 28px; height: 28px; font-size: 14px; }
-  .qty-in { width: 46px; font-size: 13px; }
+  .qty-area { gap: 4px; }
+  .qty-b { width: 32px; height: 32px; font-size: 18px; border-radius: 8px; }
+  .qty-in { width: 50px; height: 32px; font-size: 14px; border-radius: 8px; }
 
   /* Cart */
   .cart-bar { padding: 10px 14px; border-radius: 14px 14px 0 0; }
@@ -557,7 +579,10 @@ export default function App() {
           status: o.status,
           note: o.note,
           items: o.items,
-          timestamp: new Date(o.created_at).getTime()
+          timestamp: new Date(o.created_at).getTime(),
+          packed_at: o.packed_at ? new Date(o.packed_at).getTime() : null,
+          dispatched_at: o.dispatched_at ? new Date(o.dispatched_at).getTime() : null,
+          delivered_at: o.delivered_at ? new Date(o.delivered_at).getTime() : null,
         }));
         setOrders(formattedOrders);
         lastPollOrders = formattedOrders; // Initialize tracker
@@ -607,7 +632,10 @@ export default function App() {
         status: o.status,
         note: o.note,
         items: o.items || [],
-        timestamp: new Date(o.created_at).getTime()
+        timestamp: new Date(o.created_at).getTime(),
+        packed_at: o.packed_at ? new Date(o.packed_at).getTime() : null,
+        dispatched_at: o.dispatched_at ? new Date(o.dispatched_at).getTime() : null,
+        delivered_at: o.delivered_at ? new Date(o.delivered_at).getTime() : null,
       }));
       
       // Perform strict local comparison outside of React State
@@ -644,6 +672,8 @@ export default function App() {
               }
               const audio = new Audio("https://actions.google.com/sounds/v1/alarms/positive_notification.ogg");
               audio.play().catch(() => {});
+              setToast(`🚨 NEW ORDER RECEIVED FROM ${payload.new.bakery_name.toUpperCase()}!`);
+              setTimeout(() => setToast(""), 4000);
            }
            setOrders(prev => [{
               id: payload.new.id,
@@ -651,7 +681,10 @@ export default function App() {
               status: payload.new.status,
               note: payload.new.note,
               items: payload.new.items,
-              timestamp: new Date(payload.new.created_at).getTime()
+              timestamp: new Date(payload.new.created_at).getTime(),
+              packed_at: payload.new.packed_at ? new Date(payload.new.packed_at).getTime() : null,
+              dispatched_at: payload.new.dispatched_at ? new Date(payload.new.dispatched_at).getTime() : null,
+              delivered_at: payload.new.delivered_at ? new Date(payload.new.delivered_at).getTime() : null,
            }, ...prev]);
         } else if (payload.eventType === 'UPDATE') {
            // Because Postgres REPLICA IDENTITY might not be FULL or RLS might strip payload data,
@@ -670,9 +703,32 @@ export default function App() {
                     status: updatedRow.status,
                     note: updatedRow.note,
                     items: updatedRow.items || [], // ensure array
-                    timestamp: new Date(updatedRow.created_at).getTime()
+                    timestamp: new Date(updatedRow.created_at).getTime(),
+                    packed_at: updatedRow.packed_at ? new Date(updatedRow.packed_at).getTime() : null,
+                    dispatched_at: updatedRow.dispatched_at ? new Date(updatedRow.dispatched_at).getTime() : null,
+                    delivered_at: updatedRow.delivered_at ? new Date(updatedRow.delivered_at).getTime() : null,
                  } : o);
                });
+               
+               // Trigger Alerts
+               if (screenRef.current === 'bakery' && bakeryNameRef.current === updatedRow.bakery_name) {
+                 if (updatedRow.status === 'packed') {
+                   setToast(`📦 Your order is PACKED and ready!`);
+                   new Audio("https://actions.google.com/sounds/v1/alarms/positive_notification.ogg").play().catch(() => {});
+                 }
+                 if (updatedRow.status === 'dispatching') {
+                   setToast(`🚚 Your order is OUT FOR DELIVERY!`);
+                   new Audio("https://actions.google.com/sounds/v1/alarms/positive_notification.ogg").play().catch(() => {});
+                 }
+               }
+               
+               if (screenRef.current === 'driver' && updatedRow.status === 'dispatching') {
+                 setToast(`🚚 NEW ORDER READY TO DISPATCH TO ${updatedRow.bakery_name.toUpperCase()}`);
+                 new Audio("https://actions.google.com/sounds/v1/alarms/positive_notification.ogg").play().catch(() => {});
+                 if (Notification.permission === "granted") {
+                    new Notification("Ready for Dispatch!", { body: `Delivery waiting for ${updatedRow.bakery_name}` });
+                 }
+               }
              });
         } else if (payload.eventType === 'DELETE') {
            setOrders(prev => prev.filter(o => o.id !== payload.old.id));
@@ -782,6 +838,9 @@ export default function App() {
       id: insertedOrder.id,
       bakery: insertedOrder.bakery_name,
       timestamp: new Date(insertedOrder.created_at).getTime(),
+      packed_at: null,
+      dispatched_at: null,
+      delivered_at: null,
       status: insertedOrder.status,
       note: insertedOrder.note,
       items: insertedOrder.items
@@ -795,10 +854,24 @@ export default function App() {
   }
 
   async function updateStatus(oid, ns) {
+    const timestampFieldMap = {
+      packed: "packed_at",
+      dispatching: "dispatched_at",
+      delivered: "delivered_at"
+    };
+
+    const updatePayload = { status: ns };
+    const exactIso = new Date().toISOString();
+    
+    // Set exact timeline timestamp natively when marked, to ensure time is recorded sequentially.
+    if (timestampFieldMap[ns]) {
+      updatePayload[timestampFieldMap[ns]] = exactIso;
+    }
+
     // 1. Update in Supabase
-    const { error } = await supabase.from('orders').update({ status: ns, updated_at: new Date().toISOString() }).eq('id', oid);
+    const { error } = await supabase.from('orders').update(updatePayload).eq('id', oid);
     if (!error) {
-      setOrders(orders.map((o) => o.id === oid ? { ...o, status: ns, [`${ns}At`]: Date.now() } : o));
+      setOrders(orders.map((o) => o.id === oid ? { ...o, status: ns, [timestampFieldMap[ns]]: new Date(exactIso).getTime() } : o));
 
       const targetOrder = orders.find(o => o.id === oid);
       await supabase.from('logs').insert([{
@@ -1159,7 +1232,8 @@ export default function App() {
                           <span style={{ fontWeight: 700, fontSize: 13 }}>#{order.id.slice(-6).toUpperCase()}</span>
                           <span className="s-badge" style={{ background: sc.bg, color: sc.color }}>{sc.icon} {sc.label}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{order.bakery} · {(order.items || []).length} items · {fmtDate(order.timestamp)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text3)" }}>{order.bakery} · {(order.items || []).length} items · Created: {fmtDate(order.timestamp)}</div>
+                        {order.delivered_at && <div style={{ fontSize: 11, color: "#10B981", marginTop: 2 }}>Delivered: {fmtDate(order.delivered_at)}</div>}
                       </div>
                       <div style={{ display: "flex", gap: 4 }}>
                         <button className="btn-o" style={{ fontSize: 10, padding: "4px 8px" }} onClick={() => setPrintOrder(order)}>🖨️</button>
@@ -1410,7 +1484,7 @@ export default function App() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8, marginBottom: 16 }}>
                 {STATUS_FLOW.map(s => {
                   const count = myOrders.filter(o => o.status === s).length;
-                  return (
+                  return count > 0 && (
                     <div key={s} className="o-card" style={{ padding: "10px 12px", textAlign: "center", cursor: "pointer", borderLeft: `3px solid ${STATUS_CFG[s].color}`, background: statusFilter === s ? STATUS_CFG[s].bg : "var(--card)" }}
                       onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}>
                       <div style={{ fontSize: 20, fontWeight: 700, color: STATUS_CFG[s].color }}>{count}</div>
@@ -1467,6 +1541,21 @@ export default function App() {
                         {order.note && (
                           <div className="o-note"><div className="o-note-t">📝 {order.note}</div></div>
                         )}
+                        <div className="o-timeline" style={{ padding: "12px 16px", background: "var(--bg)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", display: "flex", gap: 8, flexDirection: "column" }}>
+                           {STATUS_FLOW.map((s, idx) => {
+                             const timeField = STATUS_CFG[s].timeField;
+                             const hasTime = order[timeField];
+                             if (!hasTime && idx > STATUS_FLOW.indexOf(order.status)) return null;
+                             return (
+                               <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                                 <span style={{ color: hasTime ? STATUS_CFG[s].color : "var(--text3)", width: 16 }}>{hasTime ? "✓" : "○"}</span>
+                                 <span style={{ fontWeight: 600, width: 70, color: hasTime ? "var(--text)" : "var(--text3)" }}>{STATUS_CFG[s].label}</span>
+                                 <span style={{ color: "var(--text3)" }}>{hasTime ? fmtDate(order[timeField]) : "Waiting..."}</span>
+                               </div>
+                             )
+                           })}
+                        </div>
+
                         <div className="o-acts" style={{ justifyContent: "flex-start" }}>
                            {order.status === "pending" && (
                              <button className="btn-s btn-d" onClick={() => cancelOrder(order.id)}>🗑 Cancel Order</button>
@@ -1525,7 +1614,8 @@ export default function App() {
                         <div>
                           <div className="o-id">#{order.id.slice(-6).toUpperCase()}</div>
                           <div className="o-from">To: 🏪 {order.bakery}</div>
-                          <div className="o-time">{fmtDate(order.timestamp)}</div>
+                          <div className="o-time">Ordered: {fmtDate(order.timestamp)}</div>
+                          {order.packed_at && <div className="o-time">Packed: {fmtDate(order.packed_at)}</div>}
                         </div>
                         <span className="s-badge" style={{ background: "#8B5CF6", color: "#fff" }}>
                           🚚 Dispatching
@@ -1727,6 +1817,22 @@ export default function App() {
                             {order.note && (
                               <div className="o-note"><div className="o-note-t">📝 {order.note}</div></div>
                             )}
+
+                            <div className="o-timeline" style={{ padding: "12px 16px", background: "var(--bg)", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", display: "flex", gap: 8, flexDirection: "column" }}>
+                               {STATUS_FLOW.map((s, idx) => {
+                                 const timeField = STATUS_CFG[s].timeField;
+                                 const hasTime = order[timeField];
+                                 if (!hasTime && idx > STATUS_FLOW.indexOf(order.status)) return null;
+                                 return (
+                                   <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                                     <span style={{ color: hasTime ? STATUS_CFG[s].color : "var(--text3)", width: 16 }}>{hasTime ? "✓" : "○"}</span>
+                                     <span style={{ fontWeight: 600, width: 70, color: hasTime ? "var(--text)" : "var(--text3)" }}>{STATUS_CFG[s].label}</span>
+                                     <span style={{ color: "var(--text3)" }}>{hasTime ? fmtDate(order[timeField]) : "Waiting..."}</span>
+                                   </div>
+                                 )
+                               })}
+                            </div>
+                            
                             <div className="o-acts">
                               <button className="btn-s btn-o" onClick={() => setPrintOrder(order)}>🖨️ Print</button>
                               <button className="btn-s" style={{ background: "#25D366", color: "#fff", borderColor: "#25D366" }} onClick={() => shareWhatsApp(order)}>📱 WA</button>
@@ -1735,14 +1841,9 @@ export default function App() {
                                 <button className="btn-s" style={{ background: "var(--bg2)", color: "var(--text3)" }}
                                   onClick={() => updateStatus(order.id, prev)}>← {STATUS_CFG[prev].label}</button>
                               )}
-                              {next && next !== "delivered" && (
+                              {next && (
                                 <button className="btn-s" style={{ background: STATUS_CFG[next].color, color: "#fff" }}
                                   onClick={() => updateStatus(order.id, next)}>{STATUS_CFG[next].icon} Mark {STATUS_CFG[next].label}</button>
-                              )}
-                              {next === "delivered" && order.status === "dispatching" && (
-                                <span style={{ fontSize: 12, color: "var(--text3)", fontStyle: "italic", alignSelf: "center", marginLeft: 6 }}>
-                                  Waiting on Bakery to Confirm Receipt...
-                                </span>
                               )}
                             </div>
                           </div>
@@ -1759,7 +1860,7 @@ export default function App() {
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                        <button className="btn-o" style={{ width: "auto", padding: "8px 16px" }} onClick={() => setShowCatMan(true)}>
-                         ⚙️ Categories
+                         ⚙️ Categories & Import
                        </button>
                        <button className="btn" style={{ width: "auto", padding: "8px 16px" }} onClick={() => setShowQuickAdd(true)}>
                          + Add Item
@@ -1817,9 +1918,9 @@ export default function App() {
 
                   {showCatMan && (
                     <div className="overlay" onClick={(e) => e.target === e.currentTarget && setShowCatMan(false)}>
-                      <div className="modal">
+                      <div className="modal" style={{ maxWidth: 500 }}>
                         <div className="m-hdr">
-                          <h2>Manage Categories</h2>
+                          <h2>Categories & Bulk Import</h2>
                           <button className="m-close" onClick={() => setShowCatMan(false)}>✕</button>
                         </div>
                         <div className="m-body">
@@ -1836,6 +1937,7 @@ export default function App() {
                                  return next;
                                });
                              }}
+                             showToast={showToast}
                           />
                         </div>
                       </div>
@@ -1932,12 +2034,13 @@ function ProductForm({ initialData, onSubmit, submitLabel }) {
 }
 
 /* ═══════════════════════════════════════════
-   CATEGORY MANAGER (Admin feature)
+   CATEGORY MANAGER & BULK IMPORT (Admin feature)
    ═══════════════════════════════════════════ */
-function CategoryManager({ categories, onUpdate }) {
+function CategoryManager({ categories, onUpdate, showToast }) {
   const [cats, setCats] = useState(categories);
   const [newIcon, setNewIcon] = useState("📦");
   const [newName, setNewName] = useState("");
+  const [importing, setImporting] = useState(false);
 
   async function handleAdd() {
     if (!newName.trim()) return;
@@ -1963,6 +2066,74 @@ function CategoryManager({ categories, onUpdate }) {
     await supabase.from('categories').delete().eq('id', id);
   }
 
+  async function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+      if (jsonData.length === 0) throw new Error("File is empty or badly formatted.");
+
+      // Expected columns: Name, Category, Unit, Step
+      const payload = [];
+      const newCatsRequired = new Set();
+      
+      for (const row of jsonData) {
+        const name = (row.Name || row.name || "").toString().trim();
+        const rawCat = (row.Category || row.category || "").toString().trim();
+        const unit = (row.Unit || row.unit || "kg").toString().trim();
+        const stepRaw = parseFloat(row.Step || row.step || 1);
+        const step = isNaN(stepRaw) ? 1 : stepRaw;
+
+        if (!name) continue; // skip blank rows
+        
+        const catId = rawCat ? rawCat.toLowerCase().replace(/[^a-z0-9]/g, '') : "other";
+        
+        // Auto-create category if doesn't exist
+        if (!cats.find(c => c.id === catId)) {
+          newCatsRequired.add({ id: catId, name: rawCat || "Other", icon: "📦" });
+        }
+
+        payload.push({
+          id: uid(),
+          name: name,
+          category_id: catId,
+          unit: unit,
+          step: step,
+          is_available: true
+        });
+      }
+
+      if (payload.length === 0) {
+        throw new Error("Could not find required columns. Please use headers: Name, Category, Unit, Step");
+      }
+
+      // 1. Insert any new categories automatically
+      if (newCatsRequired.size > 0) {
+        const uniqueCats = Array.from(newCatsRequired);
+        await supabase.from('categories').upsert(uniqueCats);
+        setCats(prev => [...prev, ...uniqueCats]);
+      }
+
+      // 2. Insert items
+      const { error } = await supabase.from('products').insert(payload);
+      if (error) throw error;
+
+      showToast(`Successfully imported ${payload.length} items!`);
+    } catch (err) {
+      console.error(err);
+      alert("Error importing file: " + err.message);
+    } finally {
+      setImporting(false);
+      e.target.value = null; // reset file input
+    }
+  }
+
   return (
     <div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
@@ -1981,6 +2152,16 @@ function CategoryManager({ categories, onUpdate }) {
         <input value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1 }} placeholder="New Category Name..." onKeyDown={(e) => e.key === "Enter" && handleAdd()} />
         <button className="btn" style={{ width: "auto", padding: "10px 16px" }} onClick={handleAdd}>Add</button>
       </div>
+
+      <div style={{ marginTop: 24, padding: 16, background: "var(--bg)", borderRadius: 8, border: "1px dashed #8B5CF6" }}>
+         <h3 style={{ fontSize: 14, marginBottom: 8, color: "#8B5CF6" }}>Bulk Import via Excel</h3>
+         <p style={{ fontSize: 12, color: "var(--text3)", marginBottom: 12 }}>Upload a .xlsx file with columns: <strong>Name, Category, Unit, Step</strong></p>
+         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+           <input type="file" accept=".xlsx, .xls, .csv" disabled={importing} onChange={handleFileUpload} />
+           {importing && <span style={{ fontSize: 12, color: "var(--text3)" }}>Scanning...</span>}
+         </div>
+      </div>
+
       <div style={{ marginTop: 20, textAlign: "right" }}>
         <button className="btn" style={{ width: "auto" }} onClick={() => onUpdate(cats)}>Save & Close</button>
       </div>
